@@ -2,6 +2,51 @@
 
 > 자주 까먹는 **실행/테스트 명령 모음**. (개념은 [study.md](study.md), 환경 세팅 시행착오는 [notes.md](notes.md))
 
+## DB 실행 (Docker MySQL) — 앱 켜기 전에 먼저
+
+> 책 방식: 로컬 설치 대신 **Docker로 MySQL 8** 실행.
+> ⚠️ 로컬 brew MySQL은 3306 충돌나니 꺼둘 것: `brew services stop mysql`
+
+```bash
+# 1. Docker Desktop 켜기 (안 켜져 있으면)
+open -a Docker
+docker info                      # 에러 없이 나오면 데몬 준비됨
+
+# 2. MySQL 컨테이너 실행 — 최초 1회만
+docker run --name mysql-local -p 3306:3306/tcp -e MYSQL_ROOT_PASSWORD=test -d mysql:8
+
+# 3. 확인
+docker ps                        # mysql-local STATUS가 Up이면 OK
+```
+
+### 두 번째부터 (컨테이너는 이미 있음)
+
+`docker run`은 **최초 1회만**. 이미 만든 컨테이너는 start/stop으로:
+
+```bash
+docker start mysql-local         # 켜기 (재부팅 후 등)
+docker stop mysql-local          # 끄기
+docker logs mysql-local          # 로그 보기
+docker rm -f mysql-local         # 완전 삭제 (데이터도 날아감) → 다시 docker run 필요
+```
+> `docker run`을 또 하면 `name "mysql-local" already in use` 에러. → `docker start`를 쓰거나, 갈아엎으려면 `docker rm -f` 후 `docker run`.
+
+### 접속 정보
+
+| 항목 | 값 |
+|---|---|
+| host / port | `localhost` / `3306` |
+| user / password | `root` / `test` |
+| SQLAlchemy URL | `mysql+pymysql://root:test@localhost:3306/<db>` |
+
+⚠️ DBeaver 등 GUI에서 `Public Key Retrieval is not allowed` 뜨면 → Driver properties에서 **`allowPublicKeyRetrieval` = true** (MySQL 8 기본 인증 `caching_sha2_password` 때문).
+
+### 앱용 DB 만들기 (컨테이너엔 DB가 비어 있음)
+
+```bash
+docker exec -it mysql-local mysql -uroot -ptest -e "CREATE DATABASE IF NOT EXISTS fastapi_ca;"
+```
+
 ## TL;DR — 서버 실행
 
 ```bash

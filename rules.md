@@ -33,14 +33,14 @@
 | Alembic | 1.12.x | 1.18.4 | ⚠️ 마이너 다름 |
 | Celery | 5.3.x | ❌ 미설치 | 필요 시 설치 |
 | 패키지 관리 | Poetry | Poetry 2.2.1 | ✅ 설치됨 (`~/Library/Python/3.9/bin/poetry`) |
-| DB | MySQL 8.x | PostgreSQL 18.3 | ❌ 다름 — PostgreSQL 사용 |
+| DB | MySQL 8.x | MySQL 8.x | ✅ 일치 (책과 동일 — 2026-06-03 PostgreSQL→MySQL 변경) |
 
 ### 환경 차이로 주의할 점
 
 - **Python 3.12 vs 3.11**: 책의 코드가 3.11 기준 타입 힌트/문법을 사용할 수 있다. 3.12에서 deprecation 경고가 뜨면 메모.
 - **FastAPI 0.136 vs 0.111**: 라이프스팬, 의존성 주입, Pydantic v2 통합 등에서 시그니처가 미세하게 다를 수 있음. 책 코드가 동작하지 않으면 최신 API 기준으로 수정하고 변경 이유를 주석으로 남긴다.
 - **Poetry**: 책과 동일하게 Poetry 사용 가능. `poetry init`, `poetry add`, `poetry run` 그대로 진행. (단, Claude의 Bash 툴에서 poetry를 호출할 땐 절대경로 `~/Library/Python/3.9/bin/poetry`를 써야 함 — 툴 환경의 PATH에는 잡혀 있지 않음.)
-- **PostgreSQL vs MySQL**: SQL 문법 차이(예: `AUTO_INCREMENT` vs `SERIAL`/`IDENTITY`, 백틱 vs 큰따옴표, `LIMIT/OFFSET` 동일, `JSON` 타입 차이 등)에 유의. SQLAlchemy ORM 레벨에서는 대부분 추상화되지만, raw SQL이나 Alembic 마이그레이션에서는 PostgreSQL 방언으로 작성한다. DB URL: `postgresql+psycopg://...` (또는 `postgresql+asyncpg://...`).
+- **MySQL** (책과 동일): 당초 PostgreSQL 계획에서 MySQL로 변경(2026-06-03). SQLAlchemy 드라이버는 `pymysql`, DB URL은 `mysql+pymysql://...`. raw SQL/Alembic은 MySQL 방언(`AUTO_INCREMENT`, 식별자 백틱)으로 작성. MySQL 8 기본 인증(`caching_sha2_password`)으로 클라이언트 연결 시 `allowPublicKeyRetrieval=true`가 필요할 수 있음.
 - **Celery 미설치**: 책에서 Celery가 등장하는 챕터에 도달하면 그때 설치한다.
 
 ## 협업 시 Claude에게
