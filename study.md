@@ -37,6 +37,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 7. [`self`와 키워드 인자 (위치 인자 vs 키워드 인자)](#7-self와-키워드-인자-위치-인자-vs-키워드-인자)
 8. [인스턴스 변수 `self.x` — 속성 vs 메서드](#8-인스턴스-변수-selfx--속성-vs-메서드)
 9. [인스턴스 변수 vs 클래스 변수(static) vs 싱글톤](#9-인스턴스-변수-vs-클래스-변수static-vs-싱글톤)
+10. [데코레이터(`@`) vs 어노테이션 — 닮았지만 다름](#10-데코레이터-vs-어노테이션--닮았지만-다름)
 
 ---
 
@@ -731,3 +732,51 @@ crypto = Crypto()
 ```
 
 > 지금 `Crypto`는 **셋 다 아닌 일반 클래스.** 다만 책/실무에선 한 번 만들어 재사용(DI·모듈 인스턴스)해 *결과적으로* 싱글톤처럼 쓰는 경우 많음 — 그건 **쓰는 쪽 선택**이지 클래스가 강제하는 게 아님.
+
+---
+
+## 10. 데코레이터(`@`) vs 어노테이션 — 닮았지만 다름
+
+`@router.post(...)`(FastAPI) ↔ `@PostMapping`(Spring). 겉모습(@)과 역할(라우트 선언)은 닮았지만 **작동 방식이 근본적으로 다름.**
+
+| | Python 데코레이터 | Java 어노테이션 |
+|---|---|---|
+| 본질 | 함수를 **감싸 바꾸는 실행 코드** | **메타데이터(꼬리표)** |
+| 스스로 동작? | ✅ 정의 시점 **즉시 실행** | ❌ 혼자선 아무것도 안 함 |
+| 누가 처리 | 데코레이터 자신 | 프레임워크가 **리플렉션**으로 읽음 |
+| `@x` + `f` | `f = x(f)` (교체) | f에 x 태그 부착 |
+
+> 비유: 어노테이션 = **스티커(라벨)** — 자체론 아무 일 안 함, 누가 읽고 행동. 데코레이터 = **포장지로 감싸기** — 감싸는 순간 실제로 달라짐.
+
+### 데코레이터는 진짜 코드 (`@x` = `f = x(f)`)
+
+```python
+def log(func):
+    def wrapper(*args, **kwargs):
+        print("전"); r = func(*args, **kwargs); print("후")
+        return r
+    return wrapper
+
+@log
+def hello(): print("hello")
+# ↑ 사실: hello = log(hello)
+hello()   # 출력: 전 / hello / 후  ← log가 hello를 실제로 감쌌음
+```
+
+```python
+@router.post("", status_code=201)
+def create_user(): ...
+# = create_user = router.post("", status_code=201)(create_user)
+#   router.post(...)가 함수를 라우트에 등록하고 감싼 함수를 돌려줌 (정의 시 실행됨)
+```
+
+### Spring이라면 (어노테이션 = 수동 데이터)
+
+```java
+@PostMapping
+@ResponseStatus(HttpStatus.CREATED)   // status_code=201 대응
+public String createUser() { return "user created"; }
+```
+`@PostMapping`은 **그냥 꼬리표** — 스스로 아무것도 안 하고, Spring이 시작 시 **리플렉션으로 읽어** 라우팅 등록. 처리 주체가 따로.
+
+> 정리: **데코레이터 = 능동적 코드(함수를 감쌈), 어노테이션 = 수동적 메타데이터(읽혀야 의미).** 웹 프레임워크에서 같은 "라우트 선언" 자리를 차지해 비슷해 보일 뿐.
