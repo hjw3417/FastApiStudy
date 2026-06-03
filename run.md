@@ -121,7 +121,7 @@ curl -X 'POST' \
 | 증상 | 원인 / 해결 |
 |---|---|
 | `ModuleNotFoundError: No module named 'user'` | `fastapi-ca` 아닌 데서 실행 → `cd fastapi-ca` |
-| `command not found: uvicorn` | `poetry run` 안 붙임 / venv 비활성 → `poetry run uvicorn ...` |
+| `command not found: uvicorn` (또는 `alembic`, `pytest` 등) | poetry로 깐 도구는 **venv 안에만** 있음. `poetry run <명령>` 붙이거나 `poetry shell`로 venv 켜고 실행. 설치는 됐어도 시스템 PATH엔 없어서 그냥 치면 안 먹음 |
 | `Address already in use` (8000 점유) | `lsof -i :8000`로 PID 찾아 `kill <PID>`, 또는 `--port 8001` |
 | `422 Unprocessable Entity` | 요청 바디 누락/형식 오류 → 필수 필드(name·email·password) 확인 |
 | 코드 고쳤는데 반영 안 됨 | `--reload` 빠졌거나, import 에러로 reload 실패 → 터미널 로그 확인 |

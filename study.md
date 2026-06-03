@@ -40,6 +40,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 10. [데코레이터(`@`) vs 어노테이션 — 닮았지만 다름](#10-데코레이터-vs-어노테이션--닮았지만-다름)
 11. [Pydantic — 타입 힌트로 검증·직렬화 (interface 계층 DTO)](#11-pydantic--타입-힌트로-검증직렬화-interface-계층-dto)
 12. [SQLAlchemy — ORM (DB 모델·엔진·세션)](#12-sqlalchemy--orm-db-모델엔진세션)
+13. [엔티티(domain) vs 모델(DB) — Spring 통합 vs 클린 분리](#13-엔티티domain-vs-모델db--spring-통합-vs-클린-분리)
 
 ---
 
@@ -930,3 +931,55 @@ class UserRepository(IUserRepository):     # 섹션 3의 추상을 진짜 구현
 | 컬럼 매핑 | `mapped_column(...)` | `@Column` |
 | 세션 | `Session` | `EntityManager` |
 | 마이그레이션 | Alembic | Flyway/Liquibase |
+
+---
+
+## 13. 엔티티(domain) vs 모델(DB) — Spring 통합 vs 클린 분리
+
+### 별개 클래스다 (클린 아키텍처)
+
+| | 엔티티 (domain) | 모델 (DB) |
+|---|---|---|
+| 클래스 | `User` (dataclass) | `UserModel` (SQLAlchemy) |
+| 위치 | `domain/` | `infra/.../db_models/` |
+| 아는 것 | 비즈니스 규칙만 | 컬럼·타입·테이블 |
+| SQLAlchemy 앎? | ❌ | ✅ |
+
+같은 "유저"를 **두 관점으로 표현한 별개 클래스**.
+
+### ⚠️ 용어 함정 — "Entity"의 뜻이 다르다
+
+| 단어 | Spring/JPA | 클린(DDD) |
+|---|---|---|
+| **Entity** | `@Entity` = **DB 매핑 클래스** (= 클린의 "Model") | **도메인 객체** (순수) |
+
+→ Spring의 `@Entity`는 클린 용어로 **"Model(UserModel)"에 해당**. 같은 단어가 정반대를 가리켜 헷갈림.
+
+### Spring 통합 vs 클린 분리
+
+| | Spring 레이어드 | 클린 아키텍처 |
+|---|---|---|
+| 엔티티/모델 | **1개 `@Entity`로 통합** (도메인+영속 겸용) | **분리** (`User` ↔ `UserModel`) |
+| 장점 | 매퍼 불필요, 코드 적음 | 도메인 순수·교체·테스트 쉬움 |
+| 단점 | 도메인이 JPA에 묶임 | 매퍼 보일러플레이트 |
+
+→ 틀린 게 아니라 **트레이드오프**. 클린은 도메인 순수성을 위해 매퍼 비용 감수.
+
+### 관계 = 의존 방향 (`model → entity`), 상속 아님
+
+클린 의존 규칙: **모든 의존성은 안쪽(도메인)을 향한다.**
+```
+interface(DTO) ─┐
+application     ─┼──▶  domain: User (엔티티)  ← 아무것도 안 의존, 순수
+infra(Model,    ─┘                              모두 이쪽을 향함
+     Repository)
+```
+- `model → entity` (infra가 domain을 안다), 반대 ❌.
+- **상속 아님** (`class UserModel(User)` ❌). `User`·`UserModel`은 형제 같은 별개 클래스.
+- 둘 사이 변환은 **Repository(매퍼)** 담당:
+```python
+def save(self, user: User):                  # 엔티티 받아
+    user_model = UserModel(id=user.id, ...)  # 모델로 변환(매핑)
+    db.add(user_model)
+```
+`UserModel`은 `User`를 import조차 안 해도 됨 — 변환은 repository가 함.
