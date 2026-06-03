@@ -35,6 +35,8 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 5. [타입 힌트 — `: str`, `-> User` (자바와 결정적 차이)](#5-타입-힌트--str---user-자바와-결정적-차이)
 6. [밑줄 `_` `__` — 네이밍 규칙 (private은 강제 아님)](#6-밑줄-__--네이밍-규칙-private은-강제-아님)
 7. [`self`와 키워드 인자 (위치 인자 vs 키워드 인자)](#7-self와-키워드-인자-위치-인자-vs-키워드-인자)
+8. [인스턴스 변수 `self.x` — 속성 vs 메서드](#8-인스턴스-변수-selfx--속성-vs-메서드)
+9. [인스턴스 변수 vs 클래스 변수(static) vs 싱글톤](#9-인스턴스-변수-vs-클래스-변수static-vs-싱글톤)
 
 ---
 
@@ -622,3 +624,110 @@ CryptContext(schemes=["bcrypt"], "auto")      # ❌ SyntaxError
 > **자바 차이**: 자바는 **위치 인자만** 있어 이름 붙여 못 넘김 → 빌더 패턴(`.schemes(...).deprecated(...)`)으로 흉내. 파이썬은 `이름=값`을 문법으로 제공.
 
 > 📌 추상 메서드(`find_by_email`)가 파라미터를 본문에서 안 쓰는 건 [3번](#3-추상-클래스abcmeta로-리포지토리-인터페이스--의존성-역전dip) 참고 — "약속(시그니처)"만 박는 자리라서. 이건 자바 `interface` 메서드와 같음(자바에도 있음).
+
+---
+
+## 8. 인스턴스 변수 `self.x` — 속성 vs 메서드
+
+예시 ([util/crypto.py](fastapi-ca/util/crypto.py)):
+```python
+class Crypto:
+    def __init__(self):
+        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")  # 필드 생성
+    def encrypt(self, secret):
+        return self.pwd_context.hash(secret)        # 꺼내 씀
+    def verify(self, secret, hash):
+        return self.pwd_context.verify(secret, hash)
+```
+
+### `pwd_context`는 변수명(내가 지음), `CryptContext`가 라이브러리
+
+- `pwd_context` = **내가 정한 이름**("password context" 약자). 우변 `CryptContext(...)`가 `passlib` 라이브러리 것.
+- = "passlib `CryptContext` 객체를 만들어 `pwd_context`라는 이름표를 붙인 것."
+- `CryptContext`: 비번 해싱 도구. `.hash()` 해시화, `.verify()` 일치 확인(True/False).
+
+### `self.x = 값` = 인스턴스 변수(필드) 만들기
+
+`__init__`에서 `self.X = 값` → 이 객체에 X 필드를 붙임. 다른 메서드가 `self.X`로 꺼내 씀.
+
+> **자바 비교**: `this.pwdContext = new CryptContext(...)` 생성자 필드 초기화와 동일.
+> **차이**: 자바는 클래스 상단에 `private CryptContext pwdContext;` 미리 **선언**. 파이썬은 선언 없이 **`self.X =` 처음 대입하는 순간 필드 생성**.
+
+⚠️ 담긴 건 **함수가 아니라 객체**(CryptContext 인스턴스). 그래서 "함수변수"가 아니라 인스턴스 변수.
+
+### 왜 `__init__`에 담나 — 한 번 생성 vs 매번 생성
+
+```python
+# 실제: 1번 만들고 재사용
+self.pwd_context = CryptContext(...)   # __init__에서 1번
+... self.pwd_context.hash(secret)      # 매 호출 같은 객체 재사용
+
+# 인라인: 호출마다 새 객체 (결과는 같지만 낭비)
+... CryptContext(...).hash(secret)     # 매번 새로 생성 ❌
+```
+
+결과(해시값)는 같아도 동작이 다르다. `__init__`에 담는 이유: ① 설정 객체를 **1번만 생성**해 재사용(효율), ② 설정을 **한 곳에서 관리**(`schemes` 바꿀 때 한 줄만). → 도구를 서랍에 사두고 꺼내 쓰기 vs 쓸 때마다 새로 사기.
+
+### 속성 vs 메서드 (괄호 유무) — `c.pwd_context()`는 ❌
+
+`pwd_context`는 **메서드가 아니라 객체를 담은 속성**. 괄호 붙여 호출 불가.
+
+| | 정체 | 호출 |
+|---|---|---|
+| `c.pwd_context` | 속성 (객체 담음) | 괄호 ❌ (`c.pwd_context()` → TypeError) |
+| `c.encrypt(...)` | 메서드 (함수) | 괄호 ⭕ |
+
+```python
+crypto = Crypto()
+hashed = crypto.encrypt("1234")          # 공개 API. 내부적으로 self.pwd_context.hash(...)
+ok     = crypto.verify("1234", hashed)   # → True/False
+```
+
+→ `pwd_context`는 **내부 도구**, 바깥엔 `encrypt`/`verify`만 노출. (내부용이면 [6번](#6-밑줄-__--네이밍-규칙-private은-강제-아님)처럼 `self._pwd_context`로 밑줄 가능)
+
+---
+
+## 9. 인스턴스 변수 vs 클래스 변수(static) vs 싱글톤
+
+`self.pwd_context = CryptContext(...)`는 **싱글톤도 static도 아니다.** 그냥 인스턴스 변수.
+
+```python
+c1, c2 = Crypto(), Crypto()
+c1.pwd_context is c2.pwd_context   # False — 인스턴스마다 따로 생김
+```
+> "한 번 생성"은 **인스턴스당 1개**(메서드 호출마다 새로 안 만듦)지, **전역 1개(싱글톤)**가 아니다. 헷갈리기 쉬움.
+
+### 자바 ↔ 파이썬 대응
+
+| 개념 | 자바 | 파이썬 | 지금 `Crypto`? |
+|---|---|---|---|
+| 인스턴스 변수 | `this.x` | `self.x` (`__init__` 안) | ✅ 이거임 |
+| static 변수 | `static X` | 클래스 변수 (클래스 본문 `x =`) | ❌ |
+| static 메서드 | `static m()` | `@staticmethod` | ❌ |
+| 싱글톤 | private 생성자 + `getInstance()` | 모듈 레벨 인스턴스 | ❌ |
+
+### static = 클래스 변수 (위치가 의미를 바꿈)
+
+```python
+class Crypto:
+    pwd_context = CryptContext(...)    # 클래스 본문 → 모든 인스턴스 공유 (static스러움)
+
+Crypto().pwd_context is Crypto().pwd_context   # True (공유)
+```
+- `self.pwd_context` (`__init__` 안) → **인스턴스마다 따로**
+- `pwd_context` (클래스 본문) → **공유** (자바 static에 가까움)
+
+### 싱글톤 = 전역에 인스턴스 1개
+
+```java
+// Java: private 생성자 + static getInstance()
+private static final Crypto INSTANCE = new Crypto();
+```
+```python
+# Python: 보통 모듈 레벨 인스턴스로 끝 (모듈은 최초 import 때 1번만 실행·캐시)
+# util/crypto.py
+crypto = Crypto()
+# 사용처: from util.crypto import crypto  → 같은 객체 공유 = 사실상 싱글톤
+```
+
+> 지금 `Crypto`는 **셋 다 아닌 일반 클래스.** 다만 책/실무에선 한 번 만들어 재사용(DI·모듈 인스턴스)해 *결과적으로* 싱글톤처럼 쓰는 경우 많음 — 그건 **쓰는 쪽 선택**이지 클래스가 강제하는 게 아님.
