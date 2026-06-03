@@ -312,6 +312,53 @@ application(고수준)  ──→  IUserRepository(추상, domain)  ←──  i
 
 > **Spring 비교**: `interface UserRepository`(도메인) + `@Repository UserRepositoryImpl`(인프라) + 서비스는 인터페이스에 `@Autowired`. FastAPI는 `Depends()`로 구현체 주입.
 
+### 두 개의 `user_repo.py` — 왜 domain/infra 양쪽에?
+
+같은 파일명이지만 **계층이 달라서** 역할이 정반대다. (DIP의 실물)
+
+| | domain/repository/user_repo.py | infra/repository/user_repo.py |
+|---|---|---|
+| 클래스 | `IUserRepository` (추상) | `UserRepository(IUserRepository)` (구현) |
+| 정체 | **계약/약속** — "무엇을 할 수 있나" | **이행** — "실제로 어떻게 하나" |
+| 내용 | `@abstractmethod def save(...)` 선언만 | SQLAlchemy로 진짜 INSERT/SELECT |
+| DB 아는가 | ❌ 순수 | ✅ DB 세부사항 앎 |
+| import | `abc`, 도메인 모델 | sqlalchemy, db_model, + domain의 추상 |
+
+```python
+# domain/repository/user_repo.py  — 약속 (DB 모름)
+from abc import ABCMeta, abstractmethod
+from user.domain.user import User
+
+class IUserRepository(metaclass=ABCMeta):
+    @abstractmethod
+    def save(self, user: User):      # "save 할 수 있다"는 명세만
+        raise NotImplementedError
+```
+```python
+# infra/repository/user_repo.py  — 이행 (DB 안다)
+from user.domain.repository.user_repo import IUserRepository
+
+class UserRepository(IUserRepository):   # 추상을 상속해 진짜로 구현
+    def save(self, user: User):
+        ...  # ← 책에서 SQLAlchemy로 채울 부분
+```
+
+**왜 둘로 쪼개나 (4가지):**
+1. **의존성 역전** — 서비스는 추상(domain)에만 의존, infra는 추상을 따름. 화살표가 안쪽으로.
+2. **교체 가능** — DB 바꿔도 domain/service 그대로, infra만 새로.
+3. **테스트** — 진짜 DB 대신 가짜 구현(`FakeUserRepository`) 끼움.
+4. **도메인 순수성** — domain이 끝까지 SQLAlchemy를 import 안 함.
+
+```
+application/user_service.py  ─ import ─→ IUserRepository  (domain 추상에 의존)
+domain/repository/user_repo.py  (추상)  ←──────────────────┐  둘 다 추상을 바라봄
+infra/repository/user_repo.py   (구현)  ─ import IUserRepository ┘  (화살표 위로 = 역전)
+```
+
+> ⚠️ **현재 상태**: infra `UserRepository`가 `save`를 아직 `pass`로 둬서 `@abstractmethod` 미구현 → `UserRepository()` 시 `TypeError`(추상 클래스 인스턴스화 불가). `user_service.py`는 아직 실행 불가. 책에서 infra `save`를 SQLAlchemy로 구현하면 해결.
+>
+> 흔한 실수 2개(직접 겪음): ① domain에서 `@abstractmethod` 쓰려면 `from abc import ABCMeta, abstractmethod`로 **둘 다 import**. ② 구현 클래스명 `UserRepository` 철자 — 서비스의 import와 정확히 일치해야 함.
+
 ---
 
 ## 4. UUID vs ULID — 엔티티 id 생성
