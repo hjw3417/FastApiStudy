@@ -4,11 +4,13 @@ from user.domain.user import User
 from user.domain.repository.user_repo import IUserRepository
 from user.infra.repository.user_repo import UserRepository
 from fastapi import HTTPException, status
+from utils.crypto import Crypto
 
 class UserService:
     def __init__(self):
         self.user_repo: IUserRepository = UserRepository()
         self.ulid = ULID()
+        self.crypto = Crypto()
 
     def create_user(self, name: str, email: str, password: str):
         _user = None
@@ -27,7 +29,7 @@ class UserService:
             id=self.ulid.generate(),
             name=name,
             email=email,
-            password=password,
+            password=self.crypto.encrypt(password),
             created_at=now,
             updated_at=now
         )
