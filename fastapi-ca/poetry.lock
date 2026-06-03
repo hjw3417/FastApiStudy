@@ -176,6 +176,17 @@ files = [
 all = ["mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2)"]
 
 [[package]]
+name = "py-ulid"
+version = "1.0.3"
+description = "Python library that provides an implementation of the ULID Specification"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "py-ulid-1.0.3.tar.gz", hash = "sha256:e30fcd14386fb6568efe6345b4656cb79bf5b9f54b83822d2e36ca728fe0a661"},
+]
+
+[[package]]
 name = "pydantic"
 version = "2.13.4"
 description = "Data validation using Python type hints"
@@ -759,4 +770,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "2ef22f07df082c37e88144176a3eedf0a9ce204fc3deccad3098704d551977f7"
+content-hash = "b4ed1cfede88e593f47219cb9b1a906f6ec31d5d953179ee3796d1d718154fa4"
