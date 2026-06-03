@@ -24,7 +24,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
     └── user/{domain, application, infra, interface}
 ```
 
-> 상세 환경·설치 시행착오는 [notes.md](notes.md), 스택 비교/방언 주의점은 [rules.md](rules.md) 참고.
+> 상세 환경·설치 시행착오는 [notes.md](notes.md), 스택 비교/방언 주의점은 [rules.md](rules.md), **실행·API 테스트 명령은 [run.md](run.md)** 참고.
 
 ## 목차
 
@@ -38,6 +38,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 8. [인스턴스 변수 `self.x` — 속성 vs 메서드](#8-인스턴스-변수-selfx--속성-vs-메서드)
 9. [인스턴스 변수 vs 클래스 변수(static) vs 싱글톤](#9-인스턴스-변수-vs-클래스-변수static-vs-싱글톤)
 10. [데코레이터(`@`) vs 어노테이션 — 닮았지만 다름](#10-데코레이터-vs-어노테이션--닮았지만-다름)
+11. [Pydantic — 타입 힌트로 검증·직렬화 (interface 계층 DTO)](#11-pydantic--타입-힌트로-검증직렬화-interface-계층-dto)
 
 ---
 
@@ -780,3 +781,73 @@ public String createUser() { return "user created"; }
 `@PostMapping`은 **그냥 꼬리표** — 스스로 아무것도 안 하고, Spring이 시작 시 **리플렉션으로 읽어** 라우팅 등록. 처리 주체가 따로.
 
 > 정리: **데코레이터 = 능동적 코드(함수를 감쌈), 어노테이션 = 수동적 메타데이터(읽혀야 의미).** 웹 프레임워크에서 같은 "라우트 선언" 자리를 차지해 비슷해 보일 뿐.
+
+---
+
+## 11. Pydantic — 타입 힌트로 검증·직렬화 (interface 계층 DTO)
+
+> 이 프로젝트: **Pydantic 2.13 (v2)**. 책(0.111)도 v2. 아래는 v2 문법.
+
+### 정체 — "타입 힌트를 실제로 강제하는 도구"
+
+[섹션 5](#5-타입-힌트--str---user-자바와-결정적-차이)에서 "타입 힌트는 보통 런타임에 강제 안 됨"이라 했는데, **Pydantic이 그 힌트를 런타임에 검증·변환하는 라이브러리**. FastAPI의 요청/응답 처리 엔진. (그때 말한 "FastAPI 예외"의 정체)
+
+### `BaseModel` — 스키마 정의
+
+```python
+from pydantic import BaseModel, Field
+
+class CreateUserBody(BaseModel):
+    name: str = Field(min_length=2, max_length=32)
+    email: str = Field(max_length=64)          # EmailStr 쓰려면 pydantic[email] 설치
+    password: str = Field(min_length=8, max_length=32)
+```
+`BaseModel` 상속 → 자동으로 검증·파싱·직렬화. dict/JSON을 객체로 바꾸며 타입 검사, 안 맞으면 `ValidationError`.
+
+### FastAPI 자동 검증 — 타입 힌트만 붙이면 끝
+
+```python
+@router.post("", status_code=201)
+def create_user(user: CreateUserBody):   # ← 이 힌트만으로 자동 검증
+    ...
+```
+들어온 JSON을 `CreateUserBody`로 파싱+검증, 틀리면 **자동 422 응답**. `Field` 제약은 Bean Validation(`@Size`, `@NotNull`)에 해당.
+
+### `@dataclass`(도메인)와 뭐가 다른가
+
+| | `@dataclass` (domain `User`) | Pydantic `BaseModel` (interface DTO) |
+|---|---|---|
+| 목적 | 순수 데이터 담기 | **검증 + 직렬화** |
+| 타입 강제 | ❌ (그냥 힌트) | ✅ 런타임 검증 |
+| 의존성 | 표준 라이브러리만 | `pydantic` |
+| 위치 | domain | interface |
+
+### 클린 아키텍처에서의 위치 — interface 계층
+
+Pydantic 모델 = **요청/응답 DTO** = `interface/` 계층. [섹션 2의 "3종 세트"](#2-데이터베이스-계층--도메인-모델-vs-db-모델-리포지토리-패턴) 기억:
+
+| 클래스 | 계층 | 도구 |
+|---|---|---|
+| `User` | domain | `@dataclass` |
+| `UserModel` | infra | SQLAlchemy |
+| `CreateUserBody`/`UserResponse` | **interface** | **Pydantic** |
+
+→ 도메인 `User`와 **분리**한다. 이유: 도메인이 웹/검증 라이브러리(Pydantic)에 묶이지 않게. (interface DTO ↔ domain 엔티티 변환은 컨트롤러/서비스에서)
+
+### Spring 비교
+
+| 역할 | Spring | Pydantic |
+|---|---|---|
+| JSON ↔ 객체 | Jackson | Pydantic (둘 다 내장) |
+| 검증 | Hibernate Validator(`@Valid`, `@Size`) | `Field(...)` 제약 |
+| 요청 바디 | `@RequestBody @Valid Dto` | `def f(body: Dto)` |
+
+> Pydantic은 **Jackson(직렬화) + Validator(검증)를 하나로 합친 것**. Spring은 둘이 분리돼 있는데 Pydantic은 한 클래스에서 다 함.
+
+### v2 자주 쓰는 것 (책에서 등장 시)
+
+| v2 | v1(구버전) | 용도 |
+|---|---|---|
+| `model.model_dump()` | `.dict()` | 객체 → dict |
+| `Model.model_validate(obj)` | `.from_orm()`/`.parse_obj()` | dict/ORM → 객체 |
+| `model_config = ConfigDict(from_attributes=True)` | `class Config: orm_mode=True` | ORM 객체에서 읽기 허용 |
