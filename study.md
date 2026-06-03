@@ -4,10 +4,34 @@
 > 파일·주제별로 질문하고 정리하는 개념 노트.
 > (환경 세팅 관련은 [notes.md](notes.md)에 따로 정리됨)
 
+## 기본 환경 (빠른 참조)
+
+| 항목 | 이 프로젝트 | 책 | 비고 |
+|---|---|---|---|
+| Python | 3.12 | 3.11 | 호환 |
+| FastAPI | 0.136 | 0.111 | 마이너 차이 |
+| SQLAlchemy | 2.0 | 2.0 | 일치 |
+| DB | **PostgreSQL** | MySQL | 다름 → 방언 주의 |
+| 패키지 관리 | Poetry | Poetry | 일치 |
+
+**⚠️ 명령 실행 위치**: 파이썬 앱은 git 루트가 아니라 **`fastapi-ca/`** 안에 있다. `poetry add` 등은 반드시 거기서.
+
+```
+FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.toml 없음 ❌
+└── fastapi-ca/        ← 실제 앱. poetry 명령은 여기서 ✅
+    ├── pyproject.toml
+    ├── main.py
+    └── user/{domain, application, infra, interface}
+```
+
+> 상세 환경·설치 시행착오는 [notes.md](notes.md), 스택 비교/방언 주의점은 [rules.md](rules.md) 참고.
+
 ## 목차
 
 1. [도메인 모델과 값 객체](#1-도메인-모델과-값-객체)
 2. [데이터베이스 계층 — 도메인 모델 vs DB 모델, 리포지토리 패턴](#2-데이터베이스-계층--도메인-모델-vs-db-모델-리포지토리-패턴)
+3. [추상 클래스(ABCMeta)로 리포지토리 인터페이스 — 의존성 역전(DIP)](#3-추상-클래스abcmeta로-리포지토리-인터페이스--의존성-역전dip)
+4. [UUID vs ULID — 엔티티 id 생성](#4-uuid-vs-ulid--엔티티-id-생성)
 
 ---
 
@@ -202,3 +226,171 @@ return User(id=row.id, name=row.name, email=row.email, ...)
 - ORM은 **SQLAlchemy 2.0** (책과 일치).
 - DB URL 형식: `postgresql+psycopg://...` (동기) 또는 `postgresql+asyncpg://...` (비동기).
 - SQLAlchemy ORM 레벨에선 DB 차이가 대부분 추상화되지만, **Alembic 마이그레이션·raw SQL은 PostgreSQL 방언**으로 작성해야 함 (예: `AUTO_INCREMENT` ❌ → `SERIAL`/`IDENTITY`).
+
+---
+
+## 3. 추상 클래스(ABCMeta)로 리포지토리 인터페이스 — 의존성 역전(DIP)
+
+> 책 **코드 3.3** — `user/domain/repository/user_repo.py`
+
+```python
+from abc import ABCMeta
+
+class IUserRepository(metaclass=ABCMeta):
+    pass
+```
+
+### `ABCMeta`가 뭔가
+
+`abc` = **A**bstract **B**ase **C**lass 모듈. 파이썬엔 자바의 `interface` 키워드가 **없어서** 이걸로 인터페이스를 흉내 낸다.
+
+```python
+from abc import ABCMeta, abstractmethod
+
+class IUserRepository(metaclass=ABCMeta):
+    @abstractmethod                       # ← 책에서 곧 채워질 부분
+    def save(self, user: User) -> None: ...
+
+    @abstractmethod
+    def find_by_email(self, email: str) -> User: ...
+```
+
+`metaclass=ABCMeta` + `@abstractmethod` 한 세트:
+- 추상 메서드를 **다 구현 안 하면 인스턴스 생성 불가**(`TypeError`)
+- "이 메서드들을 반드시 구현하라"고 **강제**하는 장치
+
+| Python | Java |
+|---|---|
+| `IUserRepository(metaclass=ABCMeta)` | `interface IUserRepository` |
+| `@abstractmethod def save(...)` | 인터페이스 메서드 선언 |
+
+### ⚠️ 지금 `pass`는 아직 강제 안 함 (마커일 뿐)
+
+`@abstractmethod`가 하나도 없고 `pass`만 있으면 **인스턴스화도 그냥 된다**(안 막힘). 지금은 "여기가 인터페이스다"라는 **표시**일 뿐. 진짜 강제력은 책이 `@abstractmethod` 메서드를 채울 때 생긴다. (책이 뼈대부터 단계적으로 보여주는 것)
+
+### `metaclass=ABCMeta` vs `ABC` — 같음
+
+```python
+from abc import ABC
+class IUserRepository(ABC):     # 위와 100% 동일. 책은 명시적인 쪽 선택
+    ...
+```
+
+### 이름 앞의 `I`
+
+문법 아님, **컨벤션**. "구현체 아니라 인터페이스(약속)"임을 이름으로 표시 (자바/C#의 `IList`, `IRepository` 관습).
+
+### 핵심 — "의존성이 역전돼 있다"의 의미
+
+**두 가지 방향을 분리**하면 이해된다:
+
+| 방향 | 흐름 |
+|---|---|
+| **런타임 호출** (실행 시) | 서비스 → 구현체 ("저장해!"라고 호출) |
+| **소스 의존** (import 관계) | 서비스 → 추상(domain) ← 구현체(infra) |
+
+DIP 없이 평범하게 (❌):
+```
+application(고수준)  ───→  infra(저수준, DB코드)
+                    의존    # 고수준이 저수준에 묶임 → DB 바꾸면 서비스도 흔들림
+```
+
+리포지토리 인터페이스를 domain에 두면 (✅):
+```
+application(고수준)  ──→  IUserRepository(추상, domain)  ←──  infra(구현)
+                    의존                                의존
+                                              # infra 화살표가 위로 꺾임 = 역전
+```
+
+- 서비스는 **약속(추상)** 만 import, 진짜 구현체는 모름.
+- 구현체(infra)가 거꾸로 domain의 추상을 바라보며 구현.
+- **런타임엔 서비스→infra 호출(위→아래)**, **소스 의존은 infra→domain(아래→위)**. 호출 방향과 의존 방향이 **반대** = **의존성 역전(DIP)**.
+
+책 문장 해석:
+- *"도메인의 이 모듈은 어느 계층에서나 사용 가능"* → domain은 가장 안쪽이라 누구나 의존 OK.
+- *"인프라보다 고수준(=application)에서 쓸 때 의존성이 역전"* → 서비스가 이 추상에 의존함으로써, 원래 infra로 향했을 화살표가 뒤집힌다.
+
+> **Spring 비교**: `interface UserRepository`(도메인) + `@Repository UserRepositoryImpl`(인프라) + 서비스는 인터페이스에 `@Autowired`. FastAPI는 `Depends()`로 구현체 주입.
+
+---
+
+## 4. UUID vs ULID — 엔티티 id 생성
+
+> 책에서 User `id`를 만들 때 등장. **`py-ulid` 설치 완료**, `user_service.py`에서 사용 중.
+
+### 왜 필요한가 — id를 누가 만드나
+
+| 방식 | 누가 만드나 | 클린 아키텍처 궁합 |
+|---|---|---|
+| DB auto-increment (1,2,3…) | DB가 INSERT 시 | ❌ 저장 전엔 id 없음, DB에 종속 |
+| **UUID** | 앱이 미리 생성 | ✅ DB 없이 id 확보 |
+| **ULID** | 앱이 미리 생성 | ✅✅ UUID 장점 + 시간 정렬 |
+
+**핵심**: 클린 아키텍처는 **id를 애플리케이션 계층에서 직접 생성**한다. 저장 전에 이미 `User`가 자기 id를 가져야 도메인이 DB에 안 묶임. UUID/ULID는 DB 왕복 없이 유일 id를 만들 수 있어 이걸 가능케 함. (Spring의 DB `@GeneratedValue` 대신 앱 생성 방식)
+
+### UUID vs ULID 비교
+
+| | UUID (v4) | ULID |
+|---|---|---|
+| 크기 | 128비트 | 128비트 (동일) |
+| 문자열 길이 | 36자 (하이픈 포함) | **26자** |
+| 예시 | `550e8400-e29b-41d4-a716-446655440000` | `01ARZ3NDEKTSV4RRFFQ69G5FAV` |
+| 인코딩 | 16진수 + 하이픈 | Crockford Base32 (하이픈 없음) |
+| 구성 | v4는 완전 랜덤 | **48비트 타임스탬프(ms) + 80비트 랜덤** |
+| **시간순 정렬** | ❌ (랜덤) | ✅ **생성 시각 순 정렬됨** |
+
+### ULID 핵심 장점 — 정렬 가능
+
+앞부분이 생성 시각(ms)이라 문자열을 그냥 정렬하면 **만든 순서대로** 줄선다.
+
+```
+01ARZ3NDEK...  ← 먼저 생성
+01ARZ3NDFM...  ← 나중 (앞 타임스탬프가 큼)
+```
+
+→ **DB 인덱스 성능**: UUID4는 랜덤이라 B-tree 여기저기 꽂혀 단편화. ULID는 맨 뒤에 차곡차곡 쌓여 인덱스 지역성↑. 정렬·페이징도 id만으로 가능.
+
+### 코드 (책 방식 — `py-ulid`)
+
+```python
+from ulid import ULID
+
+class UserService:
+    def __init__(self):
+        self.ulid = ULID()
+
+    def create_user(self, name, email, password):
+        user = User(
+            id=self.ulid.generate(),   # ← py-ulid: .generate()가 26자 ULID 문자열 반환
+            name=name, email=email, password=password,
+            created_at=now, updated_at=now,
+        )
+        self.user_repo.save(user)
+        return user
+```
+
+설치:
+```bash
+cd fastapi-ca            # poetry는 반드시 여기서 (git 루트 ❌)
+poetry add py-ulid       # 이 책/프로젝트가 쓰는 패키지 (이미 설치됨)
+```
+
+⚠️ **ULID 패키지가 여러 개라 헷갈림** — 셋 다 import 이름이 `ulid`로 같아서 충돌. **하나만 설치**. 이 프로젝트는 `py-ulid`.
+
+| 패키지 (PyPI) | import | id 생성 API |
+|---|---|---|
+| **`py-ulid`** ← 이 프로젝트 | `from ulid import ULID` | `ULID().generate()` → 26자 str |
+| `python-ulid` | `from ulid import ULID` | `str(ULID())` |
+| `ulid-py` | `from ulid import ULID` | `ulid.new()` 계열 |
+
+> 📝 (정정 메모) 처음엔 `python-ulid`로 안내했으나, 책 코드의 `.generate()` API는 **`py-ulid`** 것이다. 설치된 패키지로 직접 확인함.
+
+### 참고 — UUIDv7 (요즘 표준)
+
+2024년 RFC 9562에 추가. **UUID 포맷 그대로 + 앞부분 타임스탬프** → ULID처럼 시간 정렬. "UUID 호환 + ULID 장점"이라 신규 프로젝트 기본이 되는 추세. **단 책은 ULID 기준** → 학습은 책 따르고 "요즘 UUIDv7도 있다"만 인지.
+
+### 우리 환경 메모 (PostgreSQL)
+
+- 책 MySQL(VARCHAR 저장) ↔ 우리 PostgreSQL.
+- ULID는 `CHAR(26)` 문자열 저장이 단순. (128비트라 네이티브 `uuid` 타입에도 저장 가능)
+- 학습 단계는 책처럼 **문자열 컬럼**으로. 도달 시 컬럼 타입 확정.
