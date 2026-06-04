@@ -41,6 +41,8 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 11. [Pydantic — 타입 힌트로 검증·직렬화 (interface 계층 DTO)](#11-pydantic--타입-힌트로-검증직렬화-interface-계층-dto)
 12. [SQLAlchemy — ORM (DB 모델·엔진·세션)](#12-sqlalchemy--orm-db-모델엔진세션)
 13. [엔티티(domain) vs 모델(DB) — Spring 통합 vs 클린 분리](#13-엔티티domain-vs-모델db--spring-통합-vs-클린-분리)
+14. [with 문 (컨텍스트 매니저)](#14-with-문-컨텍스트-매니저)
+15. [회원가입 e2e 디버깅 — 만난 함정들](#15-회원가입-e2e-디버깅--만난-함정들)
 
 ---
 
@@ -983,3 +985,72 @@ def save(self, user: User):                  # 엔티티 받아
     db.add(user_model)
 ```
 `UserModel`은 `User`를 import조차 안 해도 됨 — 변환은 repository가 함.
+
+---
+
+## 14. with 문 (컨텍스트 매니저)
+
+리포지토리 `save`에서 등장:
+```python
+with SessionLocal() as db:
+    db.add(new_user)
+    db.commit()
+# 블록 끝나면 db.close()가 자동 호출 (예외 나도 보장)
+```
+
+### `with`가 하는 일
+
+- `with X() as y:` → `X()`의 `__enter__()` 호출(반환값이 `y`), 블록 실행, 끝나면 `__exit__()` 호출(정리).
+- `__exit__`은 **예외가 나도 반드시 실행** → 리소스 누수 방지.
+- DB 세션·파일·락 등 "열면 반드시 닫아야 하는 것"에 사용.
+
+### Java 비교 — try-with-resources
+
+```java
+try (Session db = factory.openSession()) {
+    db.add(...);
+}   // 자동 close
+```
+```python
+with SessionLocal() as db:
+    db.add(...)
+# 자동 close
+```
+→ Python `with` = Java try-with-resources. `__enter__`/`__exit__` = `AutoCloseable.close()`.
+
+### ⚠️ 지금 repo `save()`엔 중복이 있음
+
+```python
+with SessionLocal() as db:      # ① 세션 생성 (with가 자동 close 보장)
+    try:
+        db = SessionLocal()     # ② 또 세션 생성! db 덮어씀 → ①은 안 쓰임
+        db.add(new_user)
+        db.commit()
+    finally:
+        db.close()              # ②를 수동 close
+```
+- 세션이 **2개** 생김(①은 만들고 안 쓰고 with가 닫음, ②가 실제 작업). 동작은 하지만 낭비.
+- `with`가 이미 close를 보장하므로 **try/finally + 두 번째 `SessionLocal()`은 불필요.** 깔끔한 형태:
+```python
+with SessionLocal() as db:
+    db.add(new_user)
+    db.commit()
+```
+
+---
+
+## 15. 회원가입 e2e 디버깅 — 만난 함정들
+
+`POST /users`가 201로 동작하기까지 막았던 것들 (재발 방지용):
+
+| # | 증상 | 원인 | 해결 |
+|---|---|---|---|
+| 1 | 서버 import 실패 | `from utils.crypto` (폴더는 `util/`) | `utils` → `util` |
+| 2 | 해싱 시 `password cannot be longer than 72 bytes` | bcrypt 5.x ↔ passlib 1.7.4 **비호환** | `bcrypt==4.0.1` 핀 고정 |
+| 3 | `AttributeError: get_by_email` | service 호출명 ≠ repo 메서드명 | `find_by_email`로 일치 |
+| 4 | 응답에 id·해시 없음 | controller가 `return user`(요청 그대로) | `return created_user` |
+| 5 | `User() got unexpected kwarg 'name'` | 도메인 User에 Profile 넣었는데 service/repo는 flat 가정 | flat으로 복귀 (책 구조) |
+
+> 💡 **제일 재사용성 높은 교훈 — passlib + bcrypt 버전.** passlib 1.7.4는 bcrypt 5.x와 안 맞아서 해싱이 터짐(`72 bytes` 에러 또는 `MissingBackendError`). → **`poetry add "bcrypt==4.0.1"`**. FastAPI 학습에서 가장 흔히 막히는 지점 중 하나.
+>
+> 교훈 2 — **계층 간 시그니처 일치.** 한 곳(도메인 User 모양, 메서드명, 반환값)을 바꾸면 그걸 쓰는 모든 계층(service·repo·controller)을 같이 맞춰야 함. Profile 도입(5번)이 대표 사례.

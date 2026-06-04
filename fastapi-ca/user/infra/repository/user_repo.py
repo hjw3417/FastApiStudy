@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-
+from utils.db_utils import row_to_dict
 from database import SessionLocal
 from user.domain.repository.user_repo import IUserRepository
 from user.domain.user import User as UserVO
@@ -30,11 +30,4 @@ class UserRepository(IUserRepository):
 
             if not user:
                 raise HTTPException(status_code=422)
-        return UserVO(
-            id=user.id,
-            email=user.email,
-            name=user.name,
-            password=user.password,
-            created_at=user.created_at,
-            updated_at=user.updated_at
-        )
+        return UserVO(**row_to_dict(user))
