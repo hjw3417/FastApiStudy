@@ -43,6 +43,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 13. [엔티티(domain) vs 모델(DB) — Spring 통합 vs 클린 분리](#13-엔티티domain-vs-모델db--spring-통합-vs-클린-분리)
 14. [with 문 (컨텍스트 매니저)](#14-with-문-컨텍스트-매니저)
 15. [회원가입 e2e 디버깅 — 만난 함정들](#15-회원가입-e2e-디버깅--만난-함정들)
+16. [의존성 주입(DI) — 객체를 밖에서 주입](#16-의존성-주입di--객체를-밖에서-주입)
 
 ---
 
@@ -1071,3 +1072,116 @@ with SessionLocal() as db:
 > 💡 **제일 재사용성 높은 교훈 — passlib + bcrypt 버전.** passlib 1.7.4는 bcrypt 5.x와 안 맞아서 해싱이 터짐(`72 bytes` 에러 또는 `MissingBackendError`). → **`poetry add "bcrypt==4.0.1"`**. FastAPI 학습에서 가장 흔히 막히는 지점 중 하나.
 >
 > 교훈 2 — **계층 간 시그니처 일치.** 한 곳(도메인 User 모양, 메서드명, 반환값)을 바꾸면 그걸 쓰는 모든 계층(service·repo·controller)을 같이 맞춰야 함. Profile 도입(5번)이 대표 사례.
+
+---
+
+## 16. 의존성 주입(DI) — 객체를 밖에서 주입
+
+> [섹션 3](#3-추상-클래스abcmeta로-리포지토리-인터페이스--의존성-역전dip)에서 "지금 `UserService`가 `UserRepository`를 직접 생성해서 DIP를 반만 지킨다"고 짚었던 부분의 **해결책**.
+
+### DI란
+
+객체가 필요한 의존성을 **스스로 만들지 않고 밖에서 받는** 패턴. 책 예: `user_controller` → `UserService` → `UserRepository` 의존 체인. 직접 생성하면 강결합 → 구현 바뀌면 생성하는 모든 곳을 수정해야 함.
+
+### 지금 코드 (DI 안 함 — 직접 생성)
+
+```python
+class UserService:
+    def __init__(self):
+        self.user_repo: IUserRepository = UserRepository()   # 스스로 생성 = 강결합
+        self.crypto = Crypto()
+```
+
+### DI 적용 (생성자 주입)
+
+```python
+class UserService:
+    def __init__(self, user_repo: IUserRepository):   # 밖에서 주입받음
+        self.user_repo = user_repo
+```
+누가 `UserRepository()`를 만들어 넣어줄지는 **DI 컨테이너/프레임워크**가 담당.
+
+### 3가지 유형
+
+| 유형 | 주입 방법 | 시점 |
+|---|---|---|
+| **생성자 주입** (constructor) | `__init__` 인자로 | 객체 생성 시 (가장 권장) |
+| **세터 주입** (setter) | 세터 메서드로 | 생성 후 |
+| **메서드 주입** (method) | 메서드 인자로 | 그 메서드 호출 시 |
+
+### 장점 (의존성을 한 곳에서 관리)
+
+- 공통 로직 공유 / DB 연결 공유 / 인증·권한 등 보안 강화
+- 필요한 객체를 따로 생성할 필요 없음 (주입받으니까)
+- **테스트 쉬움** — 진짜 대신 가짜(mock) 구현을 주입
+
+### ⚠️ DI vs DIP (헷갈림 주의)
+
+| | DIP (의존성 역전 원칙) | DI (의존성 주입) |
+|---|---|---|
+| 정체 | **원칙** — 추상에 의존하라 ([섹션 3](#3-추상-클래스abcmeta로-리포지토리-인터페이스--의존성-역전dip)) | **기법/패턴** — 의존성을 밖에서 주입하라 |
+| 답하는 질문 | "무엇에 의존할까" | "어떻게 받을까" |
+
+→ **DI는 보통 DIP를 실현하는 수단.** 추상(`IUserRepository`)에 의존(DIP)하고, 그 구현체를 밖에서 주입(DI)한다. 같이 감.
+
+### 프레임워크
+
+- **FastAPI 내장**: `Depends()` — 경량 DI
+- **`dependency-injector`**: 파이썬 인기 DI 컨테이너 (책이 쓰는 것)
+- 책은 **둘 다** 다룸 (FastAPI Depends → dependency-injector 순).
+
+### Spring 비교
+
+| 개념 | Spring | Python |
+|---|---|---|
+| DI 컨테이너 | `ApplicationContext` (IoC 컨테이너) | `dependency-injector` Container |
+| 빈 등록 | `@Service`/`@Repository` | Container에 등록 |
+| 생성자 주입 | 생성자 + (`@Autowired`) | `__init__` 인자 / `Depends()` |
+
+> Spring은 **DI가 프레임워크의 핵심**(IoC)이라 거의 자동. 파이썬은 `Depends`나 `dependency-injector`로 명시적으로 구성. 원리는 동일.
+
+### FastAPI `Depends` 동작 — 라우터 파라미터는 FastAPI가 채운다
+
+```python
+@router.post("", status_code=201)
+def create_user(
+    user: UserCreate,                                          # ← 요청 body에서 옴
+    user_service: Annotated[UserService, Depends(UserService)] # ← FastAPI가 생성·주입
+):
+    return user_service.create_user(...)
+```
+
+- **이 함수는 내가 부르는 게 아니라 FastAPI가 부른다.** 라우터 함수의 파라미터는 "호출자가 넘기는 인자"가 아니라 **"FastAPI가 출처를 보고 채우는 자리"**. 클라이언트는 `user`(body)만 보내고, `user_service`는 아무도 안 보냄 → FastAPI가 채움.
+
+| 파라미터 | 출처 |
+|---|---|
+| `user: UserCreate` (Pydantic) | HTTP 요청 body |
+| `user_service: ...Depends(...)` | DI (FastAPI가 생성·주입) |
+| path/query 파라미터 | URL |
+
+- ⚠️ `Depends`는 **반드시 파라미터 자리**에. 함수 **본문 안** 변수 annotation으로 쓰면 무효 (파이썬이 지역변수 annotation을 실행 안 함 → `Depends` 호출조차 안 됨).
+- `Depends(UserService)` = "이 자리 채울 때 `UserService()`를 호출해 결과를 넣어라" (요청마다 실행).
+
+### Spring(클래스/싱글톤) vs FastAPI(함수/요청마다)
+
+| | Spring | FastAPI |
+|---|---|---|
+| 컨트롤러 | **클래스** | **함수** |
+| 주입 위치 | 생성자/필드 (클래스 레벨) | **함수 파라미터** (`Depends`) |
+| 기본 스코프 | **싱글톤** (앱 전체 공유) | **요청마다** 새로 생성 |
+| 메서드 파라미터 | 요청 데이터만 | 요청 + 주입 **섞임** |
+
+- **이유**: Spring은 컨트롤러가 클래스 → 클래스에 주입 / FastAPI는 라우트가 함수 → 함수 파라미터에 주입. 구조에서 자연스럽게 나옴.
+- **스코프 차이**로 DB 세션 등이 FastAPI에선 "요청마다 새 세션"으로 자연스럽게 떨어짐. Spring은 싱글톤이라 세션 스코프를 따로 다룸.
+- 본질은 동일: **내가 안 만들고 프레임워크가 만들어 넣어준다.**
+
+```python
+# 기존: 본문에서 직접 생성
+def create_user(user: UserCreate):
+    user_service = UserService()
+
+# DI: 파라미터 선언만 → FastAPI가 채움
+def create_user(user: UserCreate,
+                user_service: Annotated[UserService, Depends(UserService)]):
+    ...
+```

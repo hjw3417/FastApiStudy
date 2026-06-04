@@ -3,12 +3,16 @@ from datetime import datetime
 from user.domain.user import User
 from user.domain.repository.user_repo import IUserRepository
 from user.infra.repository.user_repo import UserRepository
-from fastapi import HTTPException, status
-from util.crypto import Crypto
+from fastapi import HTTPException, Depends
+from utils.crypto import Crypto
+from typing import Annotated
 
 class UserService:
-    def __init__(self):
-        self.user_repo: IUserRepository = UserRepository()
+    def __init__(
+            self,
+            user_repo: Annotated[IUserRepository, Depends(UserRepository)]
+            ):
+        self.user_repo = user_repo
         self.ulid = ULID()
         self.crypto = Crypto()
 
