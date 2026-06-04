@@ -628,6 +628,23 @@ CryptContext(schemes=["bcrypt"], "auto")      # ❌ SyntaxError
 
 > **자바 차이**: 자바는 **위치 인자만** 있어 이름 붙여 못 넘김 → 빌더 패턴(`.schemes(...).deprecated(...)`)으로 흉내. 파이썬은 `이름=값`을 문법으로 제공.
 
+### 언패킹 `*` `**` — 펼치기 / 모으기
+
+`UserVO(**row_to_dict(user))`의 `**`는 **딕셔너리를 키워드 인자로 펼치는** 것:
+```python
+d = {"id": "x", "name": "kim", "email": "a@b.com"}
+UserVO(**d)              # ≡ UserVO(id="x", name="kim", email="a@b.com")
+```
+
+| 문맥 | `*` (시퀀스) | `**` (딕셔너리) |
+|---|---|---|
+| 호출 시 (펼치기) | `f(*[1,2])` → `f(1, 2)` 위치 인자 | `f(**{"a":1})` → `f(a=1)` 키워드 인자 |
+| 정의 시 (모으기) | `def f(*args)` → 나머지 위치 인자를 튜플로 | `def f(**kwargs)` → 나머지 키워드 인자를 딕셔너리로 |
+
+⚠️ `**dict`로 호출하려면 **dict의 key가 파라미터명과 정확히 일치**해야 함 (없는 key → `unexpected keyword argument`, 빠진 필수 인자 → `missing argument`). → `row_to_dict`는 `UserVO` 필드명(id, name, email, …)과 똑같은 key를 돌려줘야 함.
+
+> 자바엔 `**` 언패킹 없음(키워드 인자 자체가 없으니). varargs `f(T...)`가 `*args`와 비슷한 정도.
+
 > 📌 추상 메서드(`find_by_email`)가 파라미터를 본문에서 안 쓰는 건 [3번](#3-추상-클래스abcmeta로-리포지토리-인터페이스--의존성-역전dip) 참고 — "약속(시그니처)"만 박는 자리라서. 이건 자바 `interface` 메서드와 같음(자바에도 있음).
 
 ---
