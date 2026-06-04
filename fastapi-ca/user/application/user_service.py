@@ -4,7 +4,7 @@ from user.domain.user import User
 from user.domain.repository.user_repo import IUserRepository
 from user.infra.repository.user_repo import UserRepository
 from fastapi import HTTPException, status
-from utils.crypto import Crypto
+from util.crypto import Crypto
 
 class UserService:
     def __init__(self):
@@ -16,7 +16,7 @@ class UserService:
         _user = None
 
         try:
-            _user = self.user_repo.get_by_email(email)
+            _user = self.user_repo.find_by_email(email)
         except HTTPException as e:
             if e.status_code != 422:
                 raise e

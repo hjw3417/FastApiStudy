@@ -14,6 +14,6 @@ router = APIRouter(prefix="/users")
 def create_user(user: UserCreate):
     user_service = UserService()
     created_user = user_service.create_user(user.name, user.email, user.password)
-    return user
+    return created_user
 
 
