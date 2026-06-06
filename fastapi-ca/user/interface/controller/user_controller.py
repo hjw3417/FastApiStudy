@@ -10,6 +10,10 @@ class UserCreate(BaseModel):
     email: str
     password: str
 
+class UpdateUser(BaseModel):
+    name: str | None = None
+    password: str | None = None
+
 router = APIRouter(prefix="/users")
 
 @router.post("", status_code=201)
