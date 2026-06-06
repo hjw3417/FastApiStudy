@@ -45,6 +45,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 15. [회원가입 e2e 디버깅 — 만난 함정들](#15-회원가입-e2e-디버깅--만난-함정들)
 16. [의존성 주입(DI) — 객체를 밖에서 주입](#16-의존성-주입di--객체를-밖에서-주입)
 17. [비동기 프로그래밍 — 동시성 vs 병렬성, async/await](#17-비동기-프로그래밍--동시성-vs-병렬성-asyncawait)
+18. [JWT (JSON Web Token) — 인증/인가](#18-jwt-json-web-token--인증인가)
 
 ---
 
@@ -1458,3 +1459,96 @@ asyncio.run(fetch())          # 이벤트 루프 실행
 | GIL | **있음** (CPU 병렬 제약) | **없음** (스레드로 진짜 CPU 병렬) |
 
 > 자바는 GIL이 없어 스레드로 진짜 CPU 병렬이 됨 → "CPU 작업엔 멀티프로세싱" 같은 파이썬 특유 회피책이 자바엔 거의 불필요. 반대로 파이썬 비동기는 **Node.js 이벤트 루프와 거의 같은 모델**.
+
+---
+
+## 18. JWT (JSON Web Token) — 인증/인가
+
+> 책 7장. 지금까지 API는 **누구나** 호출 가능했음. 하지만 내 게시물은 나만 보고/수정해야 함 → **인증/인가 + 로그인** 필요. 현대 웹 인증의 사실상 표준이 **JWT** (RFC 7519).
+
+### 먼저: 인증(Authentication) vs 인가(Authorization)
+
+| | 인증 (Authentication) | 인가 (Authorization) |
+|---|---|---|
+| 묻는 것 | **너 누구냐?** | **너 이거 할 권한 있냐?** |
+| 예 | 로그인 (id/pw 확인) | "이 게시물 수정은 작성자만" |
+| 순서 | 먼저 | 인증 후 |
+
+### 왜 JWT — 매 요청마다 로그인할 순 없으니
+
+매 요청마다 id/pw 입력시키면 아무도 안 씀. → 로그인 정보를 **클라이언트(브라우저/앱)에 저장**하고 이후 요청에 실어 보냄. 근데 클라이언트는 보안에 취약 → 그 보완책이 **JWT**. 서버가 세션을 따로 저장 안 하는 **무상태(stateless)** 인증.
+
+### 구조 — `header.payload.signature` (점으로 3등분)
+
+```
+eyJhbGciOi...   .   eyJzdWIiOi...   .   SflKxwRJSM...
+   헤더(Header)        페이로드(Payload)      시그니처(Signature)
+```
+- 헤더·페이로드는 **base64 인코딩** (암호화 아님! 그냥 인코딩) → 누구나 디코딩 가능.
+- base64 쓰는 이유: HTTP 헤더/파라미터로 실어 나르기 좋고, JSON 문자열 직접 못 다루는 환경 대응.
+- 동작 직접 보기: **https://jwt.io**
+
+### ① 헤더 (Header) — 토큰의 메타정보
+
+```json
+{ "typ": "JWT", "alg": "HS256" }
+```
+- `typ`: 토큰 타입. "JWT"로 권고.
+- `alg`: 서명/암호화 알고리즘. 안 하면 `"none"`, 하면 예: `HS256`.
+
+### ② 페이로드 (Payload) — 클레임(claim) 담는 곳
+
+클레임 = 토큰에 담는 정보 조각. 3종류:
+
+**1. 등록된 클레임 (Registered)** — IANA에 등록된 표준. 필수는 아니나 상호호환성 위해 권장.
+
+| 클레임 | 뜻 | 설명 |
+|---|---|---|
+| `iss` | issuer(발급자) | 누가 발급했나 |
+| `sub` | subject(주제) | 토큰 주제 (보통 유저 식별) |
+| `aud` | audience(수신자) | 누구에게 보내는가 (보통 보호 리소스 URL) |
+| `exp` | expiration(만료) | 만료 시각 — 지나면 거부. **UNIX epoch** |
+| `nbf` | not before | 이 시각 이후부터 유효 |
+| `iat` | issued at(발급 시각) | 언제 발급됐나 |
+| `jti` | JWT ID(식별자) | 토큰 고유 id — **재사용 공격 방지** |
+
+**2. 공개 클레임 (Public)** — 공개돼도 무방한 것. 이름 충돌 막으려 URI 형식 권장. 예: `{"http://example.com/is_root": true}`
+
+**3. 비공개 클레임 (Private)** — 발급자·사용자 간 약속한 것. 서비스 도메인 내 필요한 이름/값. 충돌 주의.
+
+> ⚠️⚠️ **페이로드는 base64일 뿐 암호화 아님 → 누구나 읽음.** 비밀번호 같은 **민감 정보 절대 넣지 말 것.** (네 회원 코드의 해시된 password도 토큰엔 넣으면 안 됨)
+
+### ③ 시그니처 (Signature) — 위변조 검증
+
+헤더·페이로드는 그냥 base64라 **공격자가 값 바꿔 토큰 위조 가능** → 진짜인지 검증할 장치가 시그니처.
+
+```
+HMACSHA256(
+  base64UrlEncode(header) + "." + base64UrlEncode(payload),
+  secret          ← 서버만 아는 비밀키
+)
+```
+- `alg`가 HS256이면 HMACSHA256으로 서명. **`secret`은 서버에서만 안전하게 보관.**
+- 검증: 같은 secret으로 다시 서명해보고 일치하는지 봄. **시그니처만 잘 지키면** JWT가 공개돼도 "내가 만든 토큰 vs 공격자가 위조한 것"을 구분 가능.
+- 페이로드 한 글자만 바꿔도 시그니처가 안 맞아 `Invalid Signature` → 위변조 탐지.
+
+### 핵심 요약
+
+| 부분 | 내용 | 비밀? |
+|---|---|---|
+| Header | typ, alg | ❌ 공개(base64) |
+| Payload | 클레임(iss/sub/exp…) | ❌ 공개(base64) — **민감정보 X** |
+| Signature | secret으로 서명 | secret만 서버 비밀 |
+
+→ JWT의 안전성은 **암호화가 아니라 "서명으로 위변조를 막는 것"**. 내용은 다 보이지만 **바꾸면 들킨다**가 핵심.
+
+### Spring 비교
+
+| | Spring | FastAPI(책) |
+|---|---|---|
+| 인증 프레임워크 | Spring Security | 직접 구현 (PyJWT/python-jose 등) |
+| JWT 생성/검증 | `jjwt`, `nimbus-jose-jwt` | `jwt.encode()` / `jwt.decode()` |
+| 토큰 추출 | `OncePerRequestFilter` | `Depends`로 헤더에서 추출 |
+| 무상태 | `SessionCreationPolicy.STATELESS` | 원래 무상태 |
+
+> Spring은 Security가 많은 걸 자동화하지만, FastAPI 책에선 JWT 생성·검증을 **직접** 구현하며 원리를 익힘. 무상태(stateless)라 서버가 세션을 저장 안 하는 건 동일.

@@ -1,19 +1,24 @@
 from datetime import datetime
-import time
+import asyncio
+
 
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/sync-test")
+router = APIRouter(prefix="/async-test")
 
-def sync_task(num):
+async def async_task(num):
     print("sync_task: ", num)
-    time.sleep(1)
+    await asyncio.sleep(1)
     return num
 
 @router.get("")
-def sync_example():
+async def sync_example():
     now = datetime.now()
-    results = [sync_task(1), sync_task(2), sync_task(3)]
+    results = await asyncio.gather(
+        async_task(1),
+        async_task(2),
+        async_task(3)
+    )
     print(datetime.now() - now)
 
     return {"results": results}
