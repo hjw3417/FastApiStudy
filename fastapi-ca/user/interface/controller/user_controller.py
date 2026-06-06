@@ -10,10 +10,6 @@ class UserCreate(BaseModel):
     email: str
     password: str
 
-class UpdateUser(BaseModel):
-    name: str | None = None
-    password: str | None = None
-
 router = APIRouter(prefix="/users")
 
 @router.post("", status_code=201)
@@ -31,15 +27,16 @@ class UserUpdate(BaseModel):
     name: str | None = None
     password: str | None = None
 
-    @router.put("/{user_id}")
-    @inject
-    def update_user(
-        user_id: str,
-        user: UserUpdate,
-        user_service: UserService = Depends(Provide[Container.user_service])
-    ):
-        user_service.update_user(
-            user_id=user_id,
-            name=user.name,
-            password=user.password
-        )
+@router.put("/{user_id}")
+@inject
+def update_user(
+    user_id: str,
+    user: UserUpdate,
+    user_service: UserService = Depends(Provide[Container.user_service])
+):
+    updated_user = user_service.update_user(
+        user_id=user_id,
+        name=user.name,
+        password=user.password
+    )
+    return updated_user
