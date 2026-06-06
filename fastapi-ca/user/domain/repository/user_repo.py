@@ -20,4 +20,8 @@ class IUserRepository(metaclass=ABCMeta):
     @abstractmethod
     def get_users(self)->list[User]:
         raise NotImplementedError
+    
+    @abstractmethod
+    def delete(self, id: str):
+        raise NotImplementedError
         
