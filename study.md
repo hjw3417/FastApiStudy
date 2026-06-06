@@ -1185,3 +1185,82 @@ def create_user(user: UserCreate,
                 user_service: Annotated[UserService, Depends(UserService)]):
     ...
 ```
+
+---
+
+### 2단계: `dependency-injector` 컨테이너 (중앙 IoC 컨테이너)
+
+1단계(FastAPI `Depends`)는 의존성을 **각 파라미터에 흩뿌려** 선언. 책은 한 발 더 나가 **컨테이너 한 곳에 모아** 관리 → Spring의 `ApplicationContext`에 해당.
+
+**구성 요소 3개**
+
+| 요소 | 역할 |
+|---|---|
+| `containers.py`의 `Container` | 어떤 의존성을 어떻게 만들지 **등록(설계도)** |
+| `providers.Factory(X)` | "X 달라고 하면 `X()`를 새로 찍어내라"는 **공장** |
+| `@inject` + `Provide[Container.x]` | 주입받는 **진입점**(컨트롤러)에서 컨테이너를 끌어옴 |
+
+```python
+# containers.py
+class Container(containers.DeclarativeContainer):
+    wiring_config = containers.WiringConfiguration(packages=["user"])    # user 패키지에 주입 배선
+    user_repo = providers.Factory(UserRepository)
+    user_service = providers.Factory(UserService, user_repo=user_repo)   # ← user_repo를 UserService에 주입
+```
+
+```python
+# user_controller.py — 진입점에 Provide
+@router.post("", status_code=201)
+@inject
+def create_user(user: UserCreate,
+                user_service: UserService = Depends(Provide[Container.user_service])):
+    ...
+```
+
+```python
+# user_service.py — 타입만 선언 (Provide 불필요!)
+class UserService:
+    @inject
+    def __init__(self, user_repo: IUserRepository):   # 컨테이너 Factory가 user_repo를 넣어줌
+        self.user_repo = user_repo
+```
+
+**⚠️ 헷갈렸던 핵심 — `UserService`에는 `Provide[...]`가 왜 없나**
+
+주입 마커(`Provide`)를 거는 방식이 2가지:
+- (X) 받는 자리에 직접: `user_repo: IUserRepository = Provide[Container.user_repo]`
+- (O, 책) **컨테이너 Factory가 인자를 대신 넘김** → 받는 쪽은 **타입만 선언**
+
+`user_service = providers.Factory(UserService, user_repo=user_repo)`의 `user_repo=user_repo`가 "UserService 만들 때 user_repo를 끼워넣어라"라서, `UserService.__init__`은 타입만 적으면 됨.
+
+→ **`Provide`는 "컨테이너에서 직접 꺼내올 자리"에만 붙는다.** 컨트롤러는 컨테이너에서 `user_service`를 꺼내야 하니 `Provide` 필요. `UserService`는 자기가 컨테이너를 안 뒤지고 Factory가 넣어주니 불필요.
+> 그래서 컨트롤러가 `Provide[Container.user_service]`를 쓰려면 **컨테이너에 `user_service` 팩토리가 등록돼 있어야** 함(위 컨테이너 예시의 마지막 줄). 이게 빠지면 `Container.user_service`를 못 찾아 터짐.
+> 참고: 이 Factory 방식에선 `UserService.__init__`의 `@inject`는 `user_repo`에 대해 사실상 하는 일이 없지만(마커가 없음), 책대로 둬도 무해.
+
+**`Depends` vs 컨테이너 — 같은 DI, 다른 관리**
+
+| | FastAPI `Depends` (1단계) | dependency-injector (2단계) |
+|---|---|---|
+| 등록 위치 | 파라미터마다 흩어짐 | `Container` 한 곳 집중 |
+| 적용 범위 | HTTP 라우트 안에서만 | 라우트 밖(서비스끼리)도 |
+| 교체(테스트) | 코드 수정/override | `container.x.override(가짜)` 한 줄 |
+| Spring 대응 | (FastAPI 고유) | `ApplicationContext` |
+
+### Spring IoC 컨테이너 = 팩토리 메서드 패턴인가?
+
+**엄밀히는 아니다.** 층위를 나눠 봐야 함:
+
+| 질문 | 답 |
+|---|---|
+| 컨테이너 **자체**의 본질은? | **IoC(제어의 역전) 원칙 + DI**. GoF 디자인 패턴이 아니라 **설계 원칙**. |
+| GoF 팩토리 메서드 패턴인가? | ❌ 팩토리 메서드는 **서브클래스가 오버라이드해 구체 클래스 결정**(상속 기반). 컨테이너는 상속이 아니라 **설정/메타데이터 기반**으로 빈 생성·생명주기 관리 → 굳이 치면 레지스트리/**Service Locator**에 가까움. |
+| 팩토리는 전혀 안 쓰나? | 쓴다. **빈을 "정의/생성하는 방법"**에 등장: `@Configuration`+`@Bean` 메서드(= 팩토리 메서드), `FactoryBean`, XML `factory-method`. |
+
+→ **"컨테이너 = IoC/DI 원칙"** 과 **"빈 생성 메커니즘 = 팩토리"** 를 분리해서 이해.
+
+**dependency-injector로 연결:** `providers.Factory(UserRepository)`는 이름부터 Factory — 호출 때마다 **새 인스턴스**를 찍는 공장. GoF "팩토리 메서드(상속 오버라이드)"라기보다 **생성 책임을 컨테이너로 분리한 팩토리**.
+
+| provider | 동작 | Spring 스코프 대응 |
+|---|---|---|
+| `providers.Factory` | 매번 새 인스턴스 | `prototype` |
+| `providers.Singleton` | 한 번만 생성·공유 | `singleton` (Spring 기본) |
