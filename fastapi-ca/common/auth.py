@@ -51,3 +51,12 @@ def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDEN)
 
     return CurrentUser(user_id, Role(role))
+
+def get_admin_user(token: Annotated[str, Depends(oauth2_scheme)]):
+    payload = decode_access_token(token)
+
+    role = payload.get("role")
+    if not role or role != Role.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    
+    return CurrentUser("ADMIN_USER_ID", role)
