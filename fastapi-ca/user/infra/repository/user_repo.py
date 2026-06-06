@@ -54,3 +54,9 @@ class UserRepository(IUserRepository):
             db.commit()
 
         return user
+    
+    def get_users(self) -> list[UserVO]:
+        with SessionLocal() as db:
+            users = db.query(User).all()
+
+        return [UserVO(**row_to_dict(user)) for user in users]

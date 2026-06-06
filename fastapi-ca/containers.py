@@ -8,4 +8,4 @@ class Container(containers.DeclarativeContainer):
     )
 
     user_repo = providers.Factory(UserRepository)
-    user_service = providers.Factory(UserService, user_repo_=user_repo)
+    user_service = providers.Factory(UserService, user_repo=user_repo)
