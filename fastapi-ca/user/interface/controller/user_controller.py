@@ -21,6 +21,11 @@ class UserResponse(BaseModel):
     create_at: datetime
     update_at: datetime
 
+class GetUsersResponse(BaseModel):
+    total_count: int
+    page: int
+    users: list[UserResponse]
+
 
 router = APIRouter(prefix="/users")
 
@@ -33,9 +38,6 @@ def create_user(
 )->UserResponse:
     created_user = user_service.create_user(user.name, user.email, user.password)
     return created_user
-
-
-
 
 @router.put("/{user_id}")
 @inject
@@ -57,7 +59,7 @@ def get_users(
     page: int = 1,
     items_per_page:int = 10,
     user_service: UserService = Depends(Provide[Container.user_service])
-):
+) -> GetUsersResponse:
     total_count, users = user_service.get_users(page, items_per_page)
     return {
         "total_count": total_count,
