@@ -1264,3 +1264,27 @@ class UserService:
 |---|---|---|
 | `providers.Factory` | 매번 새 인스턴스 | `prototype` |
 | `providers.Singleton` | 한 번만 생성·공유 | `singleton` (Spring 기본) |
+
+### DI는 TDD가 낳은 패턴인가 — 유래/연표
+
+**TDD에서 "태어난" 건 아니다. 뿌리는 더 먼저고, TDD는 DI를 대중화시킨 촉매.**
+
+```
+IoC (원칙, 1988~)  ──"우리한테 전화 마, 우리가 건다"(Hollywood Principle)
+  └─ DIP (원칙, 1996, 엉클 밥)  ──"구체 말고 추상에 의존하라" (= 섹션 3)
+       └─ DI (기법/패턴, 명명 2004 Fowler)  ──"그 추상 구현을 밖에서 주입"
+            ↑
+        TDD (2002, Kent Beck) 가 "테스트 가능한 설계"로 강하게 밀어줌 (촉매)
+```
+
+| 시기 | 사건 |
+|---|---|
+| 1988~ | **IoC(제어의 역전)** — 프레임워크 설계에서 논의. 내가 프레임워크를 부르는 게 아니라 프레임워크가 내 코드를 부름 |
+| 1996 | **DIP** — Robert Martin(엉클 밥)이 정식화 (추상에 의존) |
+| 2000 | **Mock Objects** 기법 — TDD 진영(London school) 논문 *Endo-Testing*. DI가 있어야 성립 |
+| 2002 | **TDD** 대중화 — Kent Beck *TDD By Example* |
+| 2004 | **"Dependency Injection"** 용어 작명 — Martin Fowler ("IoC는 너무 막연하다"). 같은 시기 Spring/PicoContainer가 무거운 EJB 반작용으로 DI를 밈 |
+
+**왜 TDD가 DI를 밀었나:** 단위 테스트를 격리하려면 의존성을 가짜(Mock/Fake)로 갈아끼울 **틈(seam)**이 필요 → 그 틈을 만들어주는 게 DI. 진짜 DB 박힌 리포지토리를 직접 생성하면 DB 없이는 테스트 불가(섹션 16 "테스트가 가능해짐" 참고). → **TDD가 테스트 가능한 설계를 강제 → DI 가치 폭발 → 대중화.**
+
+**관계 정리:** **DIP = 원칙**(무엇에 의존?), **DI = 기법**(어떻게 받지?), **TDD = DI를 키운 촉매**. "TDD가 낳은 패턴"이 아니라 **"TDD와 DI가 같이 자란 사이"**, DI의 뿌리는 IoC/DIP.
