@@ -6,13 +6,13 @@ from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Annotated
-
+from common.auth import CurrentUser, get_current_user
 class UserCreate(BaseModel):
     name: str = Field(min_length=2, max_length=32)
     email: EmailStr = Field(max_length=64)
     password: str = Field(min_length=8, max_length=32)
 
-class UserUpdate(BaseModel):
+class UpdateUserBody(BaseModel):
     name: str | None = None
     password: str | None = None
 
@@ -29,6 +29,8 @@ class GetUsersResponse(BaseModel):
     users: list[UserResponse]
 
 
+
+
 router = APIRouter(prefix="/users")
 
 @router.post("", status_code=201)
@@ -41,17 +43,17 @@ def create_user(
     created_user = user_service.create_user(user.name, user.email, user.password)
     return created_user
 
-@router.put("/{user_id}")
+@router.put("", response_model = UserResponse)
 @inject
 def update_user(
-    user_id: str,
-    user: UserUpdate,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    body: UpdateUserBody,
     user_service: UserService = Depends(Provide[Container.user_service])
 ):
     updated_user = user_service.update_user(
-        user_id=user_id,
-        name=user.name,
-        password=user.password
+        user_id=current_user.id,
+        name=body.name,
+        password=body.password
     )
     return updated_user
 
