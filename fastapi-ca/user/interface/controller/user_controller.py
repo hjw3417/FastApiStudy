@@ -4,11 +4,12 @@ from typing import Annotated
 from dependency_injector.wiring import inject, Provide
 from containers import Container
 from user.application.user_service import UserService
+from pydantic import BaseModel, EmailStr, Field
 
 class UserCreate(BaseModel):
-    name: str
-    email: str
-    password: str
+    name: str = Field(min_length=2, max_length=32)
+    email: EmailStr = Field(max_length=64)
+    password: str = Field(min_length=8, max_length=32)
 
 router = APIRouter(prefix="/users")
 
