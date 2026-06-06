@@ -5,10 +5,10 @@ from user.interface.controller.user_controller import router as user_router
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
-from containers import container
+from containers import Container
 
 app = FastAPI()
-app.container = container
+app.container = Container()
 app.include_router(user_router)
 
 @app.get("/")

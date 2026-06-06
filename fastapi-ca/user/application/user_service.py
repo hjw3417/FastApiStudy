@@ -8,7 +8,6 @@ from utils.crypto import Crypto
 from typing import Annotated
 from dependency_injector.wiring import inject, Provide
 from fastapi import Depends
-from containers import Container
 
 
 class UserService:
