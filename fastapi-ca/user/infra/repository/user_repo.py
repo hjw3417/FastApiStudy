@@ -61,7 +61,7 @@ class UserRepository(IUserRepository):
             items_per_page: int = 10,
             ) -> tuple[int, list[UserVO]]:
         with SessionLocal() as db:
-            query = db.query(User).all()
+            query = db.query(User)
             total_count = query.count()
 
             offset = (page - 1) * items_per_page
