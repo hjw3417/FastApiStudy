@@ -16,7 +16,7 @@ class UserService:
     def __init__(
             self,
             user_repo: IUserRepository,
-            )
+            
         ):
         self.user_repo = user_repo
         self.ulid = ULID()
