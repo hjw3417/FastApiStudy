@@ -646,6 +646,38 @@ UserVO(**d)              # ≡ UserVO(id="x", name="kim", email="a@b.com")
 
 > 자바엔 `**` 언패킹 없음(키워드 인자 자체가 없으니). varargs `f(T...)`가 `*args`와 비슷한 정도.
 
+### 리스트 컴프리헨션 `[식 for x in 반복]`
+
+`return [UserVO(**row_to_dict(user)) for user in users]` 한 줄에 문법 **두 개**가 겹쳐 있음.
+
+**① 컴프리헨션** = for문 + append를 한 줄로:
+```python
+# 컴프리헨션
+[UserVO(**row_to_dict(user)) for user in users]
+
+# 똑같은 풀어쓰기
+result = []
+for user in users:
+    result.append(UserVO(**row_to_dict(user)))
+```
+`[ 식 for 요소 in 반복대상 ]` = "반복대상을 돌며 각 요소를 `식`으로 변환해 **리스트로 모은다**".
+
+**② 그 안의 변환 단계** (user 하나):
+```python
+user                  # DB 행 (User 모델)
+row_to_dict(user)     # → {"id":..., "name":..., ...}  (dict)
+UserVO(**...)         # → UserVO(id=..., name=...)  (** 언패킹, 위 절)
+```
+
+→ 최종 반환은 **`list[UserVO]`** (도메인 객체 리스트). dict는 중간 단계일 뿐 dict를 반환하는 게 아님.
+
+| | Python | Java/Spring |
+|---|---|---|
+| 변환+수집 | `[f(x) for x in xs]` | `xs.stream().map(this::f).toList()` |
+| dict→생성자 | `UserVO(**d)` | (대응 없음, 필드 일일이) |
+
+> 변형: `{k: v for ...}`(딕셔너리), `{x for ...}`(셋), `(x for ...)`(제너레이터=지연 평가).
+
 > 📌 추상 메서드(`find_by_email`)가 파라미터를 본문에서 안 쓰는 건 [3번](#3-추상-클래스abcmeta로-리포지토리-인터페이스--의존성-역전dip) 참고 — "약속(시그니처)"만 박는 자리라서. 이건 자바 `interface` 메서드와 같음(자바에도 있음).
 
 ---
@@ -1245,6 +1277,45 @@ class UserService:
 | 적용 범위 | HTTP 라우트 안에서만 | 라우트 밖(서비스끼리)도 |
 | 교체(테스트) | 코드 수정/override | `container.x.override(가짜)` 한 줄 |
 | Spring 대응 | (FastAPI 고유) | `ApplicationContext` |
+
+### wiring(배선) — `@inject`/`Provide`를 실제로 이어주는 단계 ⭐
+
+dependency-injector에서 제일 많이 막히는 지점. `@inject`와 `Provide[...]`를 써놨다고 끝이 아니라, **컨테이너가 "이 모듈의 마커들을 실제 provider에 연결"하는 wiring을 해야** 비로소 주입이 됨.
+
+```
+@inject 데코레이터   : import 때 함수에 껍데기(_patched)만 씌움
+wiring (container)  : 그 껍데기에 "어떤 provider를 넣을지" 실제 연결  ← 빠지면 주입 안 됨
+```
+
+**wiring 안 되면 나는 에러:**
+```
+AttributeError: 'Provide' object has no attribute 'create_user'
+```
+= `user_service` 자리에 진짜 객체가 아니라 **`Provide` 마커가 그대로** 들어옴(껍데기만 있고 연결 안 됨).
+
+**wiring 거는 법** — `Container()` 인스턴스화 시 `wiring_config`가 자동 실행:
+```python
+# containers.py
+class Container(containers.DeclarativeContainer):
+    wiring_config = containers.WiringConfiguration(packages=["user"])  # user 패키지를 wire 대상으로
+
+# main.py
+app.container = Container()   # ← 이 순간 packages=["user"] 안 모듈들이 wire됨
+```
+
+**⭐⭐ 진짜 함정 — `packages` wiring은 `__init__.py` 필수**
+
+`packages=["user"]`는 그 패키지 **하위 모듈을 walk해서** wire함. 그런데 폴더에 **`__init__.py`가 없으면** 파이썬이 namespace package로 취급 → dependency-injector가 모듈을 **못 찾아 wire를 건너뜀** → 위 `'Provide' object...` 500.
+
+- 앱 자체 import(`from user.infra... import`)는 `__init__.py` 없어도 namespace package로 **잘 됨** → 그래서 "import는 되는데 주입만 안 되는" 헷갈리는 상황.
+- 해결: `user/` 트리 **모든 폴더에 빈 `__init__.py`** 추가. (이 프로젝트에서 실제로 겪고 9개 만들어 해결.)
+- 빈 파일이지만 **지우면 안 됨** — 지우면 wiring 깨져 다시 500.
+
+| | Spring | dependency-injector |
+|---|---|---|
+| 빈 스캔 | `@ComponentScan`이 패키지 자동 스캔 | `wiring_config(packages=[...])` |
+| 패키지 인식 | 자바는 디렉터리=패키지(자동) | 파이썬은 **`__init__.py` 있어야 정식 패키지** |
+| 빠지면 | 보통 알아서 됨 | `__init__.py` 없으면 **조용히 wire 안 함** |
 
 ### Spring IoC 컨테이너 = 팩토리 메서드 패턴인가?
 
