@@ -50,12 +50,12 @@ def update_user(
     body: UpdateUserBody,
     user_service: UserService = Depends(Provide[Container.user_service])
 ):
-    updated_user = user_service.update_user(
+    user = user_service.update_user(
         user_id=current_user.id,
         name=body.name,
         password=body.password
     )
-    return updated_user
+    return user
 
 @router.get("")
 @inject
