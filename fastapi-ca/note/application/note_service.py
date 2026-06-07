@@ -31,3 +31,17 @@ class NoteService:
             user_id = user_id,
             id=id,
         )
+    
+    def get_notes_by_tag_name(
+            self,
+            user_id:str,
+            tag_name:str,
+            page:int,
+            items_per_page:int,
+    )->tuple[int, list[Note]]:
+        return self.note_repo.get_notes_by_tag_name(
+            user_id=user_id,
+            tag_name = tag_name,
+            page = page,
+            items_per_page = items_per_page,
+        )

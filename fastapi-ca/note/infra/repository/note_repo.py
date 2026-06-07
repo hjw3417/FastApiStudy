@@ -34,7 +34,7 @@ class NoteRepository(INoteRepository):
     
     def find_by_id(self, user_id:str, id:str)->NoteVO:
         with SessionLocal() as db:
-            note = (
+            note = (        
                 db.query(Note)
                 .filter(Note.user_id == user_id, Note.id == id)
                 .first()
@@ -42,3 +42,25 @@ class NoteRepository(INoteRepository):
             if not note:
                 raise HTTPException(status_code=422)
         return NoteVO(**row_to_dict(note))
+    
+    def get_notes_by_tag_name(
+            self,
+            user_id:str,
+            tag_name:str,
+            page:int,
+            items_per_page:int,
+    )-> tuple[int,list[NoteVO]]:
+        with SessionLocal() as db:
+            query = (
+                db.query(Note)
+                .join(Note.tags)
+                .filter(Note.user_id == user_id, Tag.name == tag_name)
+            )
+            total_count = query.count()
+            notes = (
+                query.offset((page-1) * items_per_page)
+                .limit(items_per_page).all()
+            )
+
+        note_vos = [NoteVO(**row_to_dict(note)) for note in notes]
+        return total_count, note_vos

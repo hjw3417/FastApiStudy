@@ -24,3 +24,17 @@ class INoteRepository(metaclass=ABCMeta):
         """
         raise NotImplementedError
     
+    @abstractmethod
+    def get_notes_by_tag_name(
+        self,
+        user_id:str,
+        tag_name:str,
+        page: int,
+        items_per_page:int,
+    ) -> tuple[int,list[Note]]:
+        """태그명으로 노트 목록 조회Z
+        
+        Returns:
+            (전체 개수, 노트 리스트) 튜플
+        """
+        raise NotImplementedError

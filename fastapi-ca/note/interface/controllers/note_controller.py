@@ -70,4 +70,31 @@ def find_by_id(
         "tags":[tag.name for tag in note.tags]
         })
     return note_dict
-    
+
+@router.get("/tags/{tag_name}", response_model=GetNoteResponse)
+@inject
+def get_notes_by_tag_name(
+    current_user: CurrentUserDep,s
+    note_service: NoteServiceDep,
+    tag_name:str,
+    page: int=1,
+    items_per_page: int=10,
+):
+    total_count, notes = note_service.get_notes_by_tag_name(
+    user_id=current_user.id,
+    tag_name=tag_name,
+    page=page,
+    items_per_page=items_per_page,
+    )
+
+    res_notes = []
+    for note in notes:
+        note_dict = asdict(note)
+        note_dict.update({"tags": [tag.name for tag in note.tags]})
+        res_notes.append(note_dict)
+
+    return{
+        "total_count": total_count,
+        "page": page,
+        "notes": res_notes,
+    }
