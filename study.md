@@ -49,6 +49,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 19. [파이썬 자료구조 — list, tuple, dict, set (자바 비교)](#19-파이썬-자료구조--list-tuple-dict-set-자바-비교)
 20. [환경변수 — 시크릿/설정을 코드 밖으로](#20-환경변수--시크릿설정을-코드-밖으로)
 21. [LRU 알고리즘과 lru_cache (메모이제이션)](#21-lru-알고리즘과-lru_cache-메모이제이션)
+22. [Eager vs Lazy 로딩 (joinedload, DetachedInstanceError)](#22-eager-vs-lazy-로딩-joinedload-detachedinstanceerror)
 
 ---
 
@@ -1730,3 +1731,73 @@ def get_settings():
 | 싱글톤 설정 | `@lru_cache`된 `get_settings` | `@Configuration` 빈 (싱글톤) | `IOptions<T>` DI |
 
 > 한 줄: **LRU는 "오래된 것부터 버리는 캐시 정책"**, `lru_cache`는 그걸 적용한 **함수 결과 캐싱 데코레이터**. 인자 없는 함수에 쓰면 **싱글톤처럼** 동작([섹션 9 싱글톤](#9-인스턴스-변수-vs-클래스-변수static-vs-싱글톤) 참고).
+
+---
+
+## 22. Eager vs Lazy 로딩 (joinedload, DetachedInstanceError)
+
+> 책 9.4.3 노트 조회. Note↔Tag 같은 **연관 데이터를 언제 가져오냐**의 문제. [섹션 12 SQLAlchemy](#12-sqlalchemy--orm-db-모델엔진세션) 연장.
+
+### 핵심: 연관 데이터를 "미리" vs "나중에"
+
+| | **eager(즉시)** | **lazy(지연)** |
+|---|---|---|
+| 언제 가져옴 | 본체 조회할 때 **연관도 같이** (JOIN) | 연관을 **실제 접근할 때** 그제서야 쿼리 |
+| SQLAlchemy | `joinedload(Note.tags)`, `lazy="joined"` | 기본값 |
+| 장점 | 세션 밖에서도 접근 안전 | 안 쓰면 쿼리 안 함 (효율) |
+| 단점 | 안 써도 항상 가져옴 (낭비) | 세션 닫히면 못 가져옴 ↓ |
+
+### ⭐ 왜 joinedload가 필요 — `DetachedInstanceError`
+
+[섹션 14 with 블록](#14-with-문-컨텍스트-매니저)·repo 패턴과 직결:
+
+```python
+with SessionLocal() as db:
+    note = db.query(Note).filter(...).first()
+# ← with 끝 = 세션 닫힘. note는 "detached(분리)" 상태
+
+note.tags   # lazy면 이 순간 DB 조회 시도 → 세션 죽어서 → DetachedInstanceError!
+```
+- **lazy**: `note.tags` 접근하는 순간 쿼리 → `with` 밖이라 세션 죽음 → **`DetachedInstanceError`**
+- **eager(joinedload)**: 처음 조회 때 태그까지 **한 방에 JOIN** → 세션 닫혀도 메모리에 있음 → 안전
+
+→ `row_to_dict(note)`에서 `note.tags`를 세션 밖에서 읽어야 하니 **joinedload로 미리 당겨옴**.
+
+### 적용 코드 (책 9.20 / 9.21)
+
+```python
+# 조회 시점에 거는 법 (쿼리마다)
+db.query(Note).options(joinedload(Note.tags)).filter(...)
+
+# 모델에 기본 전략 박는 법 (relationship)
+tags = relationship("Tag", secondary=note_tag_association,
+                    back_populates="notes", lazy="joined")
+```
+
+### joinedload는 JOIN문 자동 생성 (≠ `.join()`)
+
+`joinedload`는 **FK 컬럼을 직접 보는 게 아니라 relationship**(`Note.tags`)을 참조 → SQLAlchemy가 거기 박힌 조인 조건(FK/연결테이블)으로 **JOIN SQL을 자동 생성**(기본 LEFT OUTER JOIN). 너는 `.join()` 한 줄 안 씀.
+
+⚠️ **`joinedload` ≠ `.join()`** (헷갈림 주의):
+
+| | `joinedload(Note.tags)` | `.join(Tag)` |
+|---|---|---|
+| 목적 | **연관 객체 채움**(로딩 전략) → `note.tags`에 Tag들 들어옴 | **쿼리 필터용 JOIN** (SQL 조인) |
+| `note.tags` 채워짐? | ✅ | ❌ (조인만 하고 객체엔 안 채움) |
+
+→ "태그 미리 로딩" = `joinedload`, "태그 조건으로 노트 필터" = `.join()`. 둘 다 SQL은 JOIN이지만 역할이 다름.
+
+> 보너스: `row_to_dict`가 `inspect(row).attrs`(컬럼+**relationship**)를 도니까, joinedload로 미리 로딩된 `tags`가 dict에 함께 담겨 `NoteVO(**row_to_dict(note))`에 들어감. 세션 닫힌 뒤 접근이라 **joinedload 없으면 여기서 DetachedInstanceError**.
+
+### 트레이드오프
+joinedload는 **항상 조인** → 태그 필요 없는 조회에서도 다 가져와 **성능 손해**. "태그 안 읽을 땐 안 가져와도 되는데"가 lazy의 장점. → 상황 따라 선택.
+
+### Java/Spring(JPA) 비교 — 같은 개념
+
+| 개념 | SQLAlchemy | JPA/Hibernate |
+|---|---|---|
+| 즉시 로딩 | `joinedload`, `lazy="joined"` | `FetchType.EAGER`, `JOIN FETCH`, `@EntityGraph` |
+| 지연 로딩 | 기본(lazy) | `FetchType.LAZY` |
+| 세션 밖 접근 에러 | **DetachedInstanceError** | **LazyInitializationException** |
+
+> JPA의 **LazyInitializationException과 1:1로 같은 문제** — "트랜잭션/세션 밖에서 lazy 컬렉션 건드리면 터진다". 해결도 같음(미리 fetch).

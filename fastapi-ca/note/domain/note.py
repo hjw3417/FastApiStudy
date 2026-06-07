@@ -5,7 +5,7 @@ from datetime import datetime
 class Tag:
     id: str
     name:str
-    craeted_at:datetime
+    created_at:datetime
     updated_at:datetime
 
 @dataclass

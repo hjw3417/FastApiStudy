@@ -7,11 +7,14 @@ from fastapi.responses import JSONResponse
 from fastapi.requests import Request
 from containers import Container
 from example.ch06_02.sync_ex import router as sync_ex_routers
+from note.interface.controllers.note_controller import router as note_routers
 
 app = FastAPI()
 app.container = Container()
+
 app.include_router(user_router)
 app.include_router(sync_ex_routers)
+app.include_router(note_routers)
 
 @app.get("/")
 def hello():
