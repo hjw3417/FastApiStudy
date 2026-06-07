@@ -48,6 +48,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 18. [JWT (JSON Web Token) — 인증/인가](#18-jwt-json-web-token--인증인가)
 19. [파이썬 자료구조 — list, tuple, dict, set (자바 비교)](#19-파이썬-자료구조--list-tuple-dict-set-자바-비교)
 20. [환경변수 — 시크릿/설정을 코드 밖으로](#20-환경변수--시크릿설정을-코드-밖으로)
+21. [LRU 알고리즘과 lru_cache (메모이제이션)](#21-lru-알고리즘과-lru_cache-메모이제이션)
 
 ---
 
@@ -1677,3 +1678,55 @@ settings = Settings()          # settings.jwt_secret 로 사용
 | 환경변수 override | ✅ | ✅ | ✅ (OS 환경변수 우선) |
 
 > 셋 다 원리 동일: **"코드는 그대로, 설정은 밖에서 주입"**. 환경변수가 파일 설정을 덮어쓰는 우선순위도 비슷.
+
+---
+
+## 21. LRU 알고리즘과 lru_cache (메모이제이션)
+
+> `config.py`의 `@lru_cache` 보고 정리. **LRU = Least Recently Used(가장 오래 안 쓴 것)**.
+
+### LRU 알고리즘 — 캐시 교체 정책
+
+캐시가 꽉 찼을 때 **"가장 오래 안 쓰인 항목"을 버림**. 가정: *최근 쓴 건 또 쓸 확률이 높다*(시간적 지역성).
+
+```
+maxsize=3
+A,B,C 접근   → [A B C]   (C 최신 ··· A 가장 오래됨)
+A 다시 접근  → [B C A]   (A를 "최신"으로 끌어올림)
+D 추가(꽉참) → [C A D]   (가장 오래된 B 퇴출)
+```
+
+> 다른 교체 정책: **FIFO**(먼저 들어온 것), **LFU**(가장 적게 쓴 것), **MRU**(가장 최근 쓴 것 — LRU 반대).
+
+### `functools.lru_cache` — 함수 결과 캐싱(메모이제이션)
+
+함수 반환값을 **인자별로 캐싱** → 같은 인자로 또 부르면 재계산 없이 캐시 반환.
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=128)   # 기본 128. maxsize=None이면 무제한(퇴출 없음)
+def slow(x): ...
+```
+- 인자가 캐시 **key** → **인자는 hashable**해야 함 (list/dict 못 씀).
+- `@lru_cache` (괄호 없이)도 OK = `maxsize=128`.
+
+### `get_settings()`에 붙인 이유 — 사실상 싱글톤
+
+```python
+@lru_cache
+def get_settings():
+    return Settings()    # .env 읽고 검증 — 매번 하면 낭비
+```
+- `get_settings()`는 **인자 없음** → 캐시 항목 **딱 1개** → 사실상 **싱글톤**.
+- 첫 호출에만 `Settings()` 실행(.env 로드), 이후엔 **같은 인스턴스** 재사용.
+- FastAPI 공식 권장 패턴 (`Depends(get_settings)`로 주입). 여기선 "LRU 퇴출"보다 **"한 번만 만들고 재사용"**이 목적.
+
+### Java/C# 비교
+
+| | Python | Java | C# |
+|---|---|---|---|
+| 메모이제이션 | `@lru_cache` (한 줄) | Guava/**Caffeine** 캐시, `LinkedHashMap`+`removeEldestEntry` | `MemoryCache` / 커스텀 |
+| 싱글톤 설정 | `@lru_cache`된 `get_settings` | `@Configuration` 빈 (싱글톤) | `IOptions<T>` DI |
+
+> 한 줄: **LRU는 "오래된 것부터 버리는 캐시 정책"**, `lru_cache`는 그걸 적용한 **함수 결과 캐싱 데코레이터**. 인자 없는 함수에 쓰면 **싱글톤처럼** 동작([섹션 9 싱글톤](#9-인스턴스-변수-vs-클래스-변수static-vs-싱글톤) 참고).

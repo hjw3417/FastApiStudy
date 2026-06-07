@@ -5,8 +5,11 @@ from enum import StrEnum
 from dataclasses import dataclass
 from fastapi.security import OAuth2PasswordBearer
 from typing import Annotated
+from config import get_settings
 
-SECRET_KEY = "THIS_IS_SUPER_SECRET_KEY"
+settings = get_settings()
+
+SECRET_KEY = settings.jwt_secret
 ALGORITHM = "HS256"
 
 class Role(StrEnum):
@@ -48,7 +51,7 @@ def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     user_id = payload.get("user_id")
     role = payload.get("role")
     if not user_id or not role or role != Role.USER:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDEN)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
     return CurrentUser(user_id, Role(role))
 
