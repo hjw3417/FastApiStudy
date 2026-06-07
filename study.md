@@ -47,6 +47,7 @@ FastApiStudy/          ← git 루트 (notes.md, rules.md, study.md). pyproject.
 17. [비동기 프로그래밍 — 동시성 vs 병렬성, async/await](#17-비동기-프로그래밍--동시성-vs-병렬성-asyncawait)
 18. [JWT (JSON Web Token) — 인증/인가](#18-jwt-json-web-token--인증인가)
 19. [파이썬 자료구조 — list, tuple, dict, set (자바 비교)](#19-파이썬-자료구조--list-tuple-dict-set-자바-비교)
+20. [환경변수 — 시크릿/설정을 코드 밖으로](#20-환경변수--시크릿설정을-코드-밖으로)
 
 ---
 
@@ -1618,3 +1619,61 @@ map.get("key");          // Map은 []로 접근 안 됨! .get() 사용
 > 한 줄: 파이썬은 **리스트·dict 둘 다 `[]`로 접근**(그래서 `[]`가 dict처럼 보임), 자바는 **`[]`=배열 전용·Map은 `.get()`**. "자바 []=딕셔너리"는 오해 — 자바 `[]`는 배열이고, 파이썬의 `d["key"]` 접근 문법과 헷갈린 것.
 
 > 관련: 리스트 컴프리헨션 `[식 for x in ...]`, `**dict` 언패킹은 [섹션 7 영역](#7-self와-키워드-인자-위치-인자-vs-키워드-인자) 참고.
+
+---
+
+## 20. 환경변수 — 시크릿/설정을 코드 밖으로
+
+> 책 8장. 코드에 **하드코딩된 민감값·설정값**을 환경변수로 빼는 작업. (책은 배포까진 안 다루지만 원리)
+
+### 환경변수란
+
+앱이 도는 **OS가 실행 시점에 넘겨주는 값**. 보통 **코드에 드러나면 안 되는 중요한 설정값**을 담음.
+
+### 왜 쓰나 — 보안 + 유연성/이식성
+
+| 목적 | 설명 |
+|---|---|
+| **보안** | 비밀번호·시크릿키를 **코드/git 밖으로** (유출 방지) |
+| **유연성·이식성** | **같은 코드**를 dev/test/운영에서 그대로, **값만 환경별로** 다르게 |
+
+→ 코드는 "환경변수 이름"만 읽고, **실제 값은 환경마다 다름**. 값 바꿀 때 **코드 수정·빌드·재배포 X** → 환경변수 파일/배포 시스템에서 값만 바꾸고 **재시작**만 하면 됨.
+
+### 우리 프로젝트에서 뺄 것 (하드코딩된 값)
+
+| 값 | 현재 위치 |
+|---|---|
+| DB 유저(`root`)·비번(`test`) | `database.py` `mysql+pymysql://root:test@...` |
+| JWT 시크릿(`THIS_IS_SUPER_SECRET_KEY`) | `common/auth.py` `SECRET_KEY` |
+
+→ [섹션 18](#18-jwt-json-web-token--인증인가)에서 "secret은 서버만, `.env`로" 했던 그 실천.
+
+### 파이썬에서 — `.env` + pydantic-settings
+
+```python
+# .env  (git에 커밋 ❌ → .gitignore에 추가)
+DATABASE_URL=mysql+pymysql://root:test@localhost:3306/fastapi_ca
+JWT_SECRET=THIS_IS_SUPER_SECRET_KEY
+```
+```python
+# config.py — pydantic-settings로 로드 (타입 검증까지 됨)
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    database_url: str
+    jwt_secret: str
+    model_config = SettingsConfigDict(env_file=".env")
+
+settings = Settings()          # settings.jwt_secret 로 사용
+```
+- ⚠️ **`.env`는 절대 git에 올리지 말 것** (`.gitignore`에 추가). 대신 값 비운 **`.env.example`**(템플릿)만 커밋해 "어떤 키가 필요한지" 공유.
+
+### Spring / C# 비교
+
+| | Spring | C#/.NET | FastAPI |
+|---|---|---|---|
+| 설정 파일 | `application.yml`/`.properties` | `appsettings.json` | `.env` |
+| 환경별 분리 | profiles (`-dev`,`-prod`) | `appsettings.{env}.json` | env별 `.env`/주입 |
+| 환경변수 override | ✅ | ✅ | ✅ (OS 환경변수 우선) |
+
+> 셋 다 원리 동일: **"코드는 그대로, 설정은 밖에서 주입"**. 환경변수가 파일 설정을 덮어쓰는 우선순위도 비슷.
