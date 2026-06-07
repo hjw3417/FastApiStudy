@@ -21,3 +21,13 @@ class NoteService:
             page=page,
             items_per_page=items_per_page,
         )
+    
+    def find_by_id(
+            self,
+            user_id: str,
+            id: str,
+    ) -> Note:
+        return self.note_repo.find_by_id(
+            user_id = user_id,
+            id=id,
+        )

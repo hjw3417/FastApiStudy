@@ -6,7 +6,7 @@ from sqlalchemy.orm import relationship
 note_tag_association = Table(
     "Note_Tag",
     Base.metadata,
-    Column("user_id", String(36), ForeignKey("Note.id")),
+    Column("note_id", String(36), ForeignKey("Note.id")),
     Column("tag_id", String(36), ForeignKey("Tag.id")),
 )
 

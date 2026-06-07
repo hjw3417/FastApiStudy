@@ -19,7 +19,6 @@ class NoteRepository(INoteRepository):
         with SessionLocal() as db:
             query = (
                 db.query(Note)
-                .options(joinedload(Note.tags))
                 .filter(Note.user_id == user_id)
             )
 
@@ -32,3 +31,14 @@ class NoteRepository(INoteRepository):
         note_vos = [NoteVO(**row_to_dict(note)) for note in notes]
 
         return total_count, note_vos
+    
+    def find_by_id(self, user_id:str, id:str)->NoteVO:
+        with SessionLocal() as db:
+            note = (
+                db.query(Note)
+                .filter(Note.user_id == user_id, Note.id == id)
+                .first()
+            )
+            if not note:
+                raise HTTPException(status_code=422)
+        return NoteVO(**row_to_dict(note))
